@@ -1,0 +1,475 @@
+{
+  "schemaVersion": 1,
+  "currentCodes": "collector/data/regions.json (built from 국토교통부 전국 법정동 20260630, see collector/build_regions.py)",
+  "rules": [
+    "MOLIT RTMS APIs answer ONLY current codes, for every contract month (old 29110/46110/42110/45111/28260/41590 → totalCount 0 with resultCode 000, no error). Always query with current codes.",
+    "Onbid lctnSdnm/lctnSggnm/lctnEmdNm already use current names; prefer them for sgg/umd and use ltnoPnu only for jibun (본번·부번·산).",
+    "oneToOne: replace the first 5 digits, keep PNU digits 6-19 (emd suffix kept — checked on 22 Onbid items for 29/46/45).",
+    "split: emd codes were renumbered; resolve the 10-digit code by lctnEmdNm under the new sgg candidates; if that fails drop the record and log."
+  ],
+  "oneToOne": {
+    "29110": {
+      "to": "12210",
+      "old": "광주광역시 동구",
+      "new": "전남광주통합특별시 동구",
+      "emdSuffixKept": true,
+      "evidence": "MOLIT aptSeq 29110-* in 12210 data"
+    },
+    "29140": {
+      "to": "12240",
+      "old": "광주광역시 서구",
+      "new": "전남광주통합특별시 서구",
+      "emdSuffixKept": true,
+      "evidence": "MOLIT aptSeq 29140-* in 12240 data"
+    },
+    "29155": {
+      "to": "12270",
+      "old": "광주광역시 남구",
+      "new": "전남광주통합특별시 남구",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "29170": {
+      "to": "12300",
+      "old": "광주광역시 북구",
+      "new": "전남광주통합특별시 북구",
+      "emdSuffixKept": true,
+      "evidence": "MOLIT aptSeq + Onbid PNU 29170→address 북구"
+    },
+    "29200": {
+      "to": "12330",
+      "old": "광주광역시 광산구",
+      "new": "전남광주통합특별시 광산구",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU 29200→address 광산구"
+    },
+    "46110": {
+      "to": "12110",
+      "old": "전라남도 목포시",
+      "new": "전남광주통합특별시 목포시",
+      "emdSuffixKept": true,
+      "evidence": "MOLIT aptSeq 46110-* in 12110 data"
+    },
+    "46130": {
+      "to": "12130",
+      "old": "전라남도 여수시",
+      "new": "전남광주통합특별시 여수시",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46150": {
+      "to": "12150",
+      "old": "전라남도 순천시",
+      "new": "전남광주통합특별시 순천시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46170": {
+      "to": "12170",
+      "old": "전라남도 나주시",
+      "new": "전남광주통합특별시 나주시",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46230": {
+      "to": "12190",
+      "old": "전라남도 광양시",
+      "new": "전남광주통합특별시 광양시",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46710": {
+      "to": "12710",
+      "old": "전라남도 담양군",
+      "new": "전남광주통합특별시 담양군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46720": {
+      "to": "12720",
+      "old": "전라남도 곡성군",
+      "new": "전남광주통합특별시 곡성군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46730": {
+      "to": "12730",
+      "old": "전라남도 구례군",
+      "new": "전남광주통합특별시 구례군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46770": {
+      "to": "12740",
+      "old": "전라남도 고흥군",
+      "new": "전남광주통합특별시 고흥군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46780": {
+      "to": "12750",
+      "old": "전라남도 보성군",
+      "new": "전남광주통합특별시 보성군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46790": {
+      "to": "12760",
+      "old": "전라남도 화순군",
+      "new": "전남광주통합특별시 화순군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46800": {
+      "to": "12770",
+      "old": "전라남도 장흥군",
+      "new": "전남광주통합특별시 장흥군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46810": {
+      "to": "12780",
+      "old": "전라남도 강진군",
+      "new": "전남광주통합특별시 강진군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46820": {
+      "to": "12790",
+      "old": "전라남도 해남군",
+      "new": "전남광주통합특별시 해남군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46830": {
+      "to": "12800",
+      "old": "전라남도 영암군",
+      "new": "전남광주통합특별시 영암군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46840": {
+      "to": "12810",
+      "old": "전라남도 무안군",
+      "new": "전남광주통합특별시 무안군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "46860": {
+      "to": "12820",
+      "old": "전라남도 함평군",
+      "new": "전남광주통합특별시 함평군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46870": {
+      "to": "12830",
+      "old": "전라남도 영광군",
+      "new": "전남광주통합특별시 영광군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46880": {
+      "to": "12840",
+      "old": "전라남도 장성군",
+      "new": "전남광주통합특별시 장성군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46890": {
+      "to": "12850",
+      "old": "전라남도 완도군",
+      "new": "전남광주통합특별시 완도군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46900": {
+      "to": "12860",
+      "old": "전라남도 진도군",
+      "new": "전남광주통합특별시 진도군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "46910": {
+      "to": "12870",
+      "old": "전라남도 신안군",
+      "new": "전남광주통합특별시 신안군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42110": {
+      "to": "51110",
+      "old": "강원도 춘천시",
+      "new": "강원특별자치도 춘천시",
+      "emdSuffixKept": true,
+      "evidence": "MOLIT 42110=0건 / 51110=데이터 (202305·202307)"
+    },
+    "42130": {
+      "to": "51130",
+      "old": "강원도 원주시",
+      "new": "강원특별자치도 원주시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42150": {
+      "to": "51150",
+      "old": "강원도 강릉시",
+      "new": "강원특별자치도 강릉시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42170": {
+      "to": "51170",
+      "old": "강원도 동해시",
+      "new": "강원특별자치도 동해시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42190": {
+      "to": "51190",
+      "old": "강원도 태백시",
+      "new": "강원특별자치도 태백시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42210": {
+      "to": "51210",
+      "old": "강원도 속초시",
+      "new": "강원특별자치도 속초시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42230": {
+      "to": "51230",
+      "old": "강원도 삼척시",
+      "new": "강원특별자치도 삼척시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42720": {
+      "to": "51720",
+      "old": "강원도 홍천군",
+      "new": "강원특별자치도 홍천군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42730": {
+      "to": "51730",
+      "old": "강원도 횡성군",
+      "new": "강원특별자치도 횡성군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42750": {
+      "to": "51750",
+      "old": "강원도 영월군",
+      "new": "강원특별자치도 영월군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42760": {
+      "to": "51760",
+      "old": "강원도 평창군",
+      "new": "강원특별자치도 평창군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42770": {
+      "to": "51770",
+      "old": "강원도 정선군",
+      "new": "강원특별자치도 정선군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42780": {
+      "to": "51780",
+      "old": "강원도 철원군",
+      "new": "강원특별자치도 철원군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42790": {
+      "to": "51790",
+      "old": "강원도 화천군",
+      "new": "강원특별자치도 화천군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42800": {
+      "to": "51800",
+      "old": "강원도 양구군",
+      "new": "강원특별자치도 양구군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42810": {
+      "to": "51810",
+      "old": "강원도 인제군",
+      "new": "강원특별자치도 인제군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42820": {
+      "to": "51820",
+      "old": "강원도 고성군",
+      "new": "강원특별자치도 고성군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "42830": {
+      "to": "51830",
+      "old": "강원도 양양군",
+      "new": "강원특별자치도 양양군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45111": {
+      "to": "52111",
+      "old": "전라북도 전주시완산구",
+      "new": "전북특별자치도 전주시완산구",
+      "emdSuffixKept": true,
+      "evidence": "MOLIT 45111=0건 / 52111=데이터 (202312·202402)"
+    },
+    "45113": {
+      "to": "52113",
+      "old": "전라북도 전주시덕진구",
+      "new": "전북특별자치도 전주시덕진구",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "45130": {
+      "to": "52130",
+      "old": "전라북도 군산시",
+      "new": "전북특별자치도 군산시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45140": {
+      "to": "52140",
+      "old": "전라북도 익산시",
+      "new": "전북특별자치도 익산시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45180": {
+      "to": "52180",
+      "old": "전라북도 정읍시",
+      "new": "전북특별자치도 정읍시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45190": {
+      "to": "52190",
+      "old": "전라북도 남원시",
+      "new": "전북특별자치도 남원시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45210": {
+      "to": "52210",
+      "old": "전라북도 김제시",
+      "new": "전북특별자치도 김제시",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45710": {
+      "to": "52710",
+      "old": "전라북도 완주군",
+      "new": "전북특별자치도 완주군",
+      "emdSuffixKept": true,
+      "evidence": "Onbid PNU"
+    },
+    "45720": {
+      "to": "52720",
+      "old": "전라북도 진안군",
+      "new": "전북특별자치도 진안군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45730": {
+      "to": "52730",
+      "old": "전라북도 무주군",
+      "new": "전북특별자치도 무주군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45740": {
+      "to": "52740",
+      "old": "전라북도 장수군",
+      "new": "전북특별자치도 장수군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45750": {
+      "to": "52750",
+      "old": "전라북도 임실군",
+      "new": "전북특별자치도 임실군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45770": {
+      "to": "52770",
+      "old": "전라북도 순창군",
+      "new": "전북특별자치도 순창군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45790": {
+      "to": "52790",
+      "old": "전라북도 고창군",
+      "new": "전북특별자치도 고창군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    },
+    "45800": {
+      "to": "52800",
+      "old": "전라북도 부안군",
+      "new": "전북특별자치도 부안군",
+      "emdSuffixKept": true,
+      "evidence": "name match only (old code from standard code list, not in current CSV) — verify in Phase 2"
+    }
+  },
+  "split": {
+    "28110": {
+      "to": [
+        "28125",
+        "28155"
+      ],
+      "old": "인천광역시 중구",
+      "new": "제물포구(내륙) / 영종구(영종도)",
+      "resolveBy": "lctnEmdNm → current 10-digit code (emd codes renumbered: 2811014800 운북동 → 2815510400)",
+      "evidence": "Onbid PNU 2811014800 with address 영종구 운북동"
+    },
+    "28140": {
+      "to": [
+        "28125"
+      ],
+      "old": "인천광역시 동구",
+      "new": "인천광역시 제물포구",
+      "resolveBy": "lctnEmdNm (emd codes likely renumbered)",
+      "evidence": "not observed — inferred from 2026-06-30 reorganisation (제물포구 신설)"
+    },
+    "28260": {
+      "to": [
+        "28275",
+        "28290"
+      ],
+      "old": "인천광역시 서구",
+      "new": "서해구 / 검단구",
+      "resolveBy": "lctnEmdNm → current 10-digit code (2826011200 가좌동 → 2827511000)",
+      "evidence": "Onbid PNU 28260* with address 서해구 (3 items); MOLIT 28260=0건 / 28275=216건 (202605)"
+    },
+    "41590": {
+      "to": [
+        "41591",
+        "41593",
+        "41595",
+        "41597"
+      ],
+      "old": "경기도 화성시 (일반구 없음)",
+      "new": "화성시 만세구·효행구·병점구·동탄구 (2026-02-01)",
+      "resolveBy": "lctnEmdNm",
+      "evidence": "0 Onbid PNUs with 41590 prefix; MOLIT 41590=0건 / 41597=48건 (202601)"
+    }
+  }
+}

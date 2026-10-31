@@ -1,0 +1,842 @@
+{
+  "schemaVersion": 1,
+  "source": "Onbid 15157207 getRlstCltrList2 full dump 2026-10-31 (pvctTrgtYn=N, 8,784 items); items = distinct cltrMngNo incl. lease rows; codes seen only in pvctTrgtYn=Y rows are marked items=0. Moved from public_auction_alert tool/spike/usage_groups.json (plan A8, 2026-10-31).",
+  "groups": [
+    "apt",
+    "rowhouse",
+    "officetel",
+    "house",
+    "land",
+    "commercial",
+    "other"
+  ],
+  "rtmsApis": {
+    "apt": "15126468",
+    "rh": "15126467",
+    "offi": "15126464",
+    "land": "15126466",
+    "sh": "15126465",
+    "nrg": "15126463",
+    "indu": "15126470"
+  },
+  "largeCode": {
+    "10000": "부동산 (all items)"
+  },
+  "midFallback": {
+    "10100": "land",
+    "10200": "other",
+    "10300": "commercial",
+    "10400": "other",
+    "10500": "other"
+  },
+  "default": "other",
+  "bySmallCode": {
+    "10101": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "대지",
+      "group": "land",
+      "rtms": "land",
+      "items": 602,
+      "uncertain": false
+    },
+    "10102": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "임야",
+      "group": "land",
+      "rtms": "land",
+      "items": 1216,
+      "uncertain": false
+    },
+    "10103": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "전",
+      "group": "land",
+      "rtms": "land",
+      "items": 1035,
+      "uncertain": false
+    },
+    "10104": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "답",
+      "group": "land",
+      "rtms": "land",
+      "items": 664,
+      "uncertain": false
+    },
+    "10105": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "과수원",
+      "group": "land",
+      "rtms": "land",
+      "items": 32,
+      "uncertain": false
+    },
+    "10106": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "잡종지",
+      "group": "land",
+      "rtms": "land",
+      "items": 88,
+      "uncertain": false
+    },
+    "10107": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "학교용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 7,
+      "uncertain": false
+    },
+    "10108": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "체육용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 4,
+      "uncertain": false
+    },
+    "10109": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "종교용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 1,
+      "uncertain": false
+    },
+    "10110": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "목장용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 10,
+      "uncertain": false
+    },
+    "10111": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "창고용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 4,
+      "uncertain": false
+    },
+    "10112": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "철도용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 1,
+      "uncertain": false
+    },
+    "10113": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "공장용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 37,
+      "uncertain": false
+    },
+    "10114": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "주유소용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 1,
+      "uncertain": false
+    },
+    "10115": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "수도용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 1,
+      "uncertain": false
+    },
+    "10116": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "주차장",
+      "group": "land",
+      "rtms": "land",
+      "items": 50,
+      "uncertain": false
+    },
+    "10117": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "유원지",
+      "group": "land",
+      "rtms": "land",
+      "items": 1,
+      "uncertain": false
+    },
+    "10118": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "공원",
+      "group": "land",
+      "rtms": "land",
+      "items": 5,
+      "uncertain": false
+    },
+    "10119": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "도로",
+      "group": "land",
+      "rtms": "land",
+      "items": 73,
+      "uncertain": false
+    },
+    "10120": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "구거",
+      "group": "land",
+      "rtms": "land",
+      "items": 2,
+      "uncertain": false
+    },
+    "10121": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "유지",
+      "group": "land",
+      "rtms": "land",
+      "items": 3,
+      "uncertain": false
+    },
+    "10123": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "염전",
+      "group": "land",
+      "rtms": "land",
+      "items": 3,
+      "uncertain": false
+    },
+    "10125": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "하천",
+      "group": "land",
+      "rtms": "land",
+      "items": 5,
+      "uncertain": false
+    },
+    "10126": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "양어장",
+      "group": "land",
+      "rtms": "land",
+      "items": 2,
+      "uncertain": false
+    },
+    "10128": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "묘지",
+      "group": "land",
+      "rtms": "land",
+      "items": 6,
+      "uncertain": false
+    },
+    "10129": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "기타토지",
+      "group": "land",
+      "rtms": "land",
+      "items": 30,
+      "uncertain": false
+    },
+    "10201": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "아파트",
+      "group": "apt",
+      "rtms": "apt",
+      "items": 507,
+      "uncertain": false
+    },
+    "10202": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "주상복합",
+      "group": "apt",
+      "rtms": "apt",
+      "items": 7,
+      "uncertain": true,
+      "note": "주상복합: 아파트 호실·상가·건물 전체가 섞임(7건 중 건물 전체 2건). 면적이 크면(예: 1,000㎡ 초과) commercial로 보는 규칙을 Phase 2에서 검토"
+    },
+    "10203": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "빌라",
+      "group": "rowhouse",
+      "rtms": "rh",
+      "items": 6,
+      "uncertain": false,
+      "note": "빌라"
+    },
+    "10204": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "단독주택",
+      "group": "house",
+      "rtms": "sh",
+      "items": 230,
+      "uncertain": false
+    },
+    "10205": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "다가구주택",
+      "group": "house",
+      "rtms": "sh",
+      "items": 22,
+      "uncertain": false
+    },
+    "10206": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "다세대주택",
+      "group": "rowhouse",
+      "rtms": "rh",
+      "items": 372,
+      "uncertain": false
+    },
+    "10207": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "다중주택",
+      "group": "house",
+      "rtms": "sh",
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "10208": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "도시형생활주택",
+      "group": "rowhouse",
+      "rtms": "rh",
+      "items": 138,
+      "uncertain": true,
+      "note": "도시형생활주택: 실거래에서 연립다세대 또는 아파트로 신고될 수 있음. Phase 3에서 rh에 없으면 apt도 찾는 안 검토"
+    },
+    "10209": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "연립주택",
+      "group": "rowhouse",
+      "rtms": "rh",
+      "items": 78,
+      "uncertain": false
+    },
+    "10211": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "기숙사",
+      "group": "other",
+      "rtms": null,
+      "items": 8,
+      "uncertain": false,
+      "note": "기숙사"
+    },
+    "10215": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "상가주택",
+      "group": "house",
+      "rtms": "sh",
+      "items": 9,
+      "uncertain": true,
+      "note": "상가주택: 실거래는 단독/다가구 또는 상업업무용(일반). 지분·토지+건물 묶음이 많음"
+    },
+    "10219": {
+      "mid": "10200",
+      "midName": "주거용건물",
+      "name": "기타주거용건물",
+      "group": "rowhouse",
+      "rtms": "rh",
+      "items": 270,
+      "uncertain": true,
+      "note": "기타주거용건물: 표본은 대부분 다세대·나홀로 아파트 호실(예: 대연롯데캐슬레전드 1단지 호실), 일부 단독·지분. rh로 두고 Phase 3에서 apt도 찾는 안 검토"
+    },
+    "10301": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "근린생활시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1287,
+      "uncertain": false
+    },
+    "10302": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "문화및집회시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 13,
+      "uncertain": false
+    },
+    "10303": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "종교시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10304": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "판매시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 285,
+      "uncertain": false
+    },
+    "10305": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "운수시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10306": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "의료시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 6,
+      "uncertain": false
+    },
+    "10307": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "교육연구시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 38,
+      "uncertain": false
+    },
+    "10308": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "노유자시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 6,
+      "uncertain": false
+    },
+    "10309": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "수련시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10310": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "운동시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10311": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "업무시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 316,
+      "uncertain": false
+    },
+    "10312": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "숙박시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 232,
+      "uncertain": false
+    },
+    "10313": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "위락시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 5,
+      "uncertain": false
+    },
+    "10314": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "교정및군사시설",
+      "group": "other",
+      "rtms": null,
+      "items": 10,
+      "uncertain": false
+    },
+    "10315": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "방송및통신시설",
+      "group": "other",
+      "rtms": null,
+      "items": 1,
+      "uncertain": false
+    },
+    "10317": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "묘지관련시설",
+      "group": "other",
+      "rtms": null,
+      "items": 1,
+      "uncertain": false
+    },
+    "10318": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "관광휴게시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 3,
+      "uncertain": false
+    },
+    "10319": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "공공용시설",
+      "group": "other",
+      "rtms": null,
+      "items": 11,
+      "uncertain": false
+    },
+    "10320": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "부속건축물",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "10322": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "가설건축물",
+      "group": "other",
+      "rtms": null,
+      "items": 2,
+      "uncertain": false,
+      "note": "가설건축물"
+    },
+    "10323": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "기타상가용및업무용",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 46,
+      "uncertain": false
+    },
+    "10326": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "기타근린생활시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 24,
+      "uncertain": false
+    },
+    "10327": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "공장및주택",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 15,
+      "uncertain": true,
+      "note": "공장및주택: 상업업무용 또는 공장창고로 신고될 수 있음"
+    },
+    "10328": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "기타건물",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10329": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "모텔",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "10331": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "콘도미니움",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 65,
+      "uncertain": true,
+      "note": "콘도미니엄: 대부분 객실 지분(면적 1~10㎡). 같은 동 비교 의미가 약함 — other로 내리는 안도 가능"
+    },
+    "10332": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "호텔",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10333": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "사무실",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 27,
+      "uncertain": false
+    },
+    "10334": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "사옥",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10335": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "기타의료용건물",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10337": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "구매시설",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10338": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "백화점",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 1,
+      "uncertain": false
+    },
+    "10339": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "상업용빌딩",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 28,
+      "uncertain": false
+    },
+    "10340": {
+      "mid": "10300",
+      "midName": "상가용및업무용건물",
+      "name": "시장",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 3,
+      "uncertain": false
+    },
+    "10401": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "공장시설",
+      "group": "other",
+      "rtms": "indu",
+      "items": 64,
+      "uncertain": false,
+      "note": "공장시설 — group은 other(7종에 공장 없음), 비교는 공장창고 API"
+    },
+    "10402": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "창고시설",
+      "group": "other",
+      "rtms": "indu",
+      "items": 51,
+      "uncertain": false,
+      "note": "창고시설 — group은 other, 비교는 공장창고 API"
+    },
+    "10403": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "위험물저장및처리시설",
+      "group": "other",
+      "rtms": null,
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "10404": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "자동차관련시설",
+      "group": "other",
+      "rtms": null,
+      "items": 5,
+      "uncertain": false
+    },
+    "10405": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "동물및식물관련시설",
+      "group": "other",
+      "rtms": null,
+      "items": 3,
+      "uncertain": false
+    },
+    "10406": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "분뇨및쓰레기처리시설",
+      "group": "other",
+      "rtms": null,
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "10501": {
+      "mid": "10500",
+      "midName": "용도복합용건물",
+      "name": "주/상용건물",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 6,
+      "uncertain": true,
+      "note": "주/상용건물: 건물 전체·여러 호실 묶음이 많음. 호실 하나는 오피스텔·다세대일 수 있음"
+    },
+    "10502": {
+      "mid": "10500",
+      "midName": "용도복합용건물",
+      "name": "주·산용건물",
+      "group": "other",
+      "rtms": null,
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "10503": {
+      "mid": "10500",
+      "midName": "용도복합용건물",
+      "name": "오피스텔",
+      "group": "officetel",
+      "rtms": "offi",
+      "items": 611,
+      "uncertain": false
+    },
+    "10504": {
+      "mid": "10500",
+      "midName": "용도복합용건물",
+      "name": "기타용도복합건물",
+      "group": "commercial",
+      "rtms": "nrg",
+      "items": 68,
+      "uncertain": true,
+      "note": "기타용도복합건물: 역사·터미널 임대시설물, 캠핑장 등. 매각만 남기면 대부분 상가·건물"
+    },
+    "31253": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "주택부지",
+      "group": "land",
+      "rtms": "land",
+      "items": 3,
+      "uncertain": true,
+      "note": "주택부지(31xxx 계열 코드, 토지 중분류 아래)"
+    },
+    "31254": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "토지",
+      "group": "land",
+      "rtms": "land",
+      "items": 7,
+      "uncertain": true,
+      "note": "토지(31xxx 계열 코드)"
+    },
+    "31255": {
+      "mid": "10100",
+      "midName": "토지",
+      "name": "특수용지",
+      "group": "land",
+      "rtms": "land",
+      "items": 1,
+      "uncertain": true,
+      "note": "특수용지(31xxx 계열 코드)"
+    },
+    "31302": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "가스 저장소",
+      "group": "other",
+      "rtms": null,
+      "items": 0,
+      "uncertain": true,
+      "note": "pvctTrgtYn=Y(수의계약가능) 행에서만 본 코드 — 입찰 목록(N)에는 아직 없음. 중분류 기본 규칙으로 넣음"
+    },
+    "31403": {
+      "mid": "10400",
+      "midName": "산업용및기타특수용건물",
+      "name": "기타제조공장",
+      "group": "other",
+      "rtms": "indu",
+      "items": 1,
+      "uncertain": true,
+      "note": "기타제조공장(31xxx 계열 코드)"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# Local collector runs (manual runbook) — never commit outputs to main.
+/out/
+/prev/
+.staging-*/
+
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+
+# Never keep a key file in this repository.
+*.key
+.env
