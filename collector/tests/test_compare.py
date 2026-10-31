@@ -25,14 +25,19 @@ def cache_of(api, lawd, deals):
     return {(api, lawd, ym): Month(api, lawd, ym, "2026-10-31", tuple(rows)) for ym, rows in months.items()}
 
 
-def item(api="rh", code="10206", **fields):
+GROUP_OF = {"apt": "apt", "rh": "rowhouse", "offi": "officetel", "land": "land", "sh": "house",
+            "nrg": "commercial", "indu": "other"}
+
+
+def item(api="offi", code="10503", group=None, **fields):
     base = {"pnu": PNU, "umd": UMD, "emdName": "화곡동", "bldgM2": 84.9, "landM2": 20.0,
             "lowestBid": 200000000, "share": False}
     record = item_record(sgg="11500", **{**base, **fields})
+    record["usage"] = {**record["usage"], "group": group or GROUP_OF.get(api, "other")}
     return SimpleNamespace(record=record, rtms=api, usage_code=code)
 
 
-def compare_one(it, deals, api="rh"):
+def compare_one(it, deals, api="offi"):
     index = compare.deals_index(cache_of(api, "11500", deals))
     return compare.compare_item(it, index, PARAMS)
 
@@ -98,8 +103,8 @@ class SameBuildingTest(unittest.TestCase):
         index = RegionIndex.load()
         raw = [rtms_item(umdNm="화곡동", jibun="645-32", excluUseAr="84.9", cdealType="O")] * 3
         rows = tuple(r for r in (rtms_client.summarize("rh", "11500", row, index) for row in raw) if r)
-        result = compare.compare_item(item(), compare.deals_index({("rh", "11500", "202609"): Month(
-            "rh", "11500", "202609", "2026-10-31", rows)}), PARAMS)
+        result = compare.compare_item(item(api="rh", code="10206"), compare.deals_index(
+            {("rh", "11500", "202609"): Month("rh", "11500", "202609", "2026-10-31", rows)}), PARAMS)
         self.assertEqual(result, {"kind": "none"})
 
 
@@ -113,6 +118,8 @@ class SameDongTest(unittest.TestCase):
         self.assertEqual(result["kind"], "sameDong")
         self.assertEqual((result["n"], len(result["deals"])), (10, 10))
         self.assertEqual(set(result), {"kind", "months", "n", "medianPerM2", "deals"})
+        # 8 deals of 110,000,000 / 110.37 m2 (996,647.6/m2) and 2 of 1-2M / 59.43 m2 -> median 996,648
+        self.assertEqual(result["medianPerM2"], 996648)
         self.assertEqual(result["deals"][-1]["ym"], "2026-02")
 
     def test_land_needs_the_same_jimok(self):
@@ -152,11 +159,55 @@ class SameDongTest(unittest.TestCase):
         self.assertEqual(compare_one(item(umd=None, pnu=None), [deal()]), {"kind": "none"})
 
 
+class GroupAndRangeTest(unittest.TestCase):
+    """A9 (진호님 2026-11-01): ratio badges for apartments and officetels only; review HIGH-2, MEDIUM-4."""
+
+    def three(self, **fields):
+        return [deal(d=d, **fields) for d in (1, 2, 3)]
+
+    def test_apartment_and_officetel_get_same_building(self):
+        self.assertEqual(compare_one(item(api="apt", code="10201"), self.three(), api="apt")["kind"], "sameBuilding")
+        self.assertEqual(compare_one(item(api="offi", code="10503"), self.three(), api="offi")["kind"],
+                         "sameBuilding")
+
+    def test_rowhouse_items_only_get_same_dong(self):
+        for code in ("10206", "10208", "10219"):
+            result = compare_one(item(api="rh", code=code), self.three(), api="rh")
+            self.assertEqual(result["kind"], "sameDong", code)
+            self.assertNotIn("ratio", result)
+
+    def test_median_rounding_to_zero_has_no_comparison(self):
+        land = item(api="land", code="10103", landM2=30000.0)
+        deals = [deal(k=None, a=30000.0, p=10000, j="전")]          # 1만원 for 30,000 m2 -> 0.33 won/m2
+        for d in deals:
+            del d["row"]["k"], d["row"]["f"]
+        self.assertEqual(compare_one(land, deals, api="land"), {"kind": "none"})
+
+    def test_median_above_the_amount_cap_has_no_comparison(self):
+        tiny = item(bldgM2=0.01)
+        self.assertEqual(compare_one(tiny, self.three(a=0.01, p=10**13)), {"kind": "none"})   # 1e15 won/m2
+
+    def test_estimate_above_the_amount_cap_falls_back_to_same_dong(self):
+        result = compare_one(item(bldgM2=100.0), self.three(a=90.0, p=10**13))
+        self.assertEqual(result["kind"], "sameDong")
+        self.assertEqual(result["medianPerM2"], 111111111111)
+
+    def test_ratio_above_the_cap_is_null(self):
+        result = compare_one(item(lowestBid=1000000000), self.three(p=10000))   # estimate 10,000 won
+        self.assertEqual((result["kind"], result["estimate"], result["ratio"]), ("sameBuilding", 10000, None))
+
+    def test_missing_umd_uses_the_pnu_dong(self):
+        result = compare_one(item(umd=None), [deal(k=None)])
+        self.assertEqual((result["kind"], result["n"]), ("sameDong", 1))
+
+
 class ParamsTest(unittest.TestCase):
     def test_starting_values_from_the_plan(self):
         self.assertEqual((PARAMS.months, PARAMS.building_tolerance, PARAMS.building_min), (12, 0.10, 3))
         self.assertEqual((PARAMS.dong_tolerance, PARAMS.dong_max), (0.30, 10))
         self.assertEqual(PARAMS.building_apis, frozenset({"apt", "rh", "offi"}))
+        self.assertEqual(PARAMS.building_groups, frozenset({"apt", "officetel"}))
+        self.assertEqual(PARAMS.building_shown, 10)
 
     def test_every_land_and_commercial_code_is_known_or_explicitly_unmapped(self):
         import json

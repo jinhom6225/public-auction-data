@@ -148,6 +148,9 @@ class CompareRulesTest(unittest.TestCase):
             {**SAME_BUILDING, "estimate": 0}, {**SAME_BUILDING, "medianPerM2": 0}, {**SAME_BUILDING, "n": 0},
             {**SAME_BUILDING, "n": True}, {**SAME_BUILDING, "months": 0}, {**SAME_BUILDING, "months": 25},
             {**SAME_BUILDING, "n": 2, "deals": [DEAL] * 3},
+            {**SAME_BUILDING, "n": 2, "deals": [DEAL] * 2},                 # LOW-1: below minDeals 3
+            {**SAME_BUILDING, "n": 25, "deals": [DEAL] * 3},                # deals must be min(n, 10)
+            {**SAME_BUILDING, "n": 4, "deals": [DEAL] * 3},
             {**SAME_DONG, "deals": []},
             {**SAME_DONG, "n": 11, "deals": [DEAL] * 11},
             {**SAME_DONG, "deals": [{**DEAL, "ym": "2026-9"}]},
@@ -162,5 +165,18 @@ class CompareRulesTest(unittest.TestCase):
         for compare in bad:
             self.assertIn("invalid compare", self.problems(compare), compare)
 
-    def test_same_building_may_list_fewer_deals_than_n(self):
-        self.assertEqual(self.problems({**SAME_BUILDING, "n": 25}), [])
+    def test_same_building_lists_the_ten_newest_of_n(self):
+        self.assertEqual(self.problems({**SAME_BUILDING, "n": 25, "deals": [DEAL] * 10}), [])
+
+    def test_share_or_private_price_needs_a_null_ratio(self):
+        for overrides in ({"share": True}, {"lowestBid": None, "lowestBidText": "비공개", "ratioToAppraisal": None}):
+            record = good(compare=SAME_BUILDING, **overrides)
+            self.assertIn("invalid compare", validate.record_problems(record, "11", INDEX), overrides)
+            record = good(compare={**SAME_BUILDING, "ratio": None}, **overrides)
+            self.assertEqual(validate.record_problems(record, "11", INDEX), [], overrides)
+
+    def test_min_deals_matches_compare_params(self):
+        from collector import compare
+        params = compare.Params.load()
+        self.assertEqual((validate.MIN_SAME_BUILDING, validate.MAX_DEALS), (params.building_min, params.building_shown))
+        self.assertEqual(validate.MAX_DEALS, params.dong_max)

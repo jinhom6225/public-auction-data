@@ -1,15 +1,20 @@
 {
   "schemaVersion": 1,
-  "note": "Phase 3 comparison numbers (research §3.4). Starting values; change only with an update-log row in public_auction_alert plan.md. Item area field per API: research §3.4 (bldgM2 = 전용 for apt/rh/offi, 연면적 for sh/nrg/indu; landM2 for land). Tables map Onbid usage small codes to MOLIT 지목 / buildingUse; an unmapped code gets no same-dong comparison.",
+  "note": "Phase 3 comparison numbers (research §3.4). Starting values; change only with an update-log row in public_auction_alert plan.md. Item area field per API: research §3.4 (bldgM2 = 전용 for apt/rh/offi, 연면적 for sh/nrg/indu; landM2 for land). Tables map Onbid usage small codes to MOLIT 지목 / buildingUse; an unmapped code gets no same-dong comparison. A9 (2026-11-01): same-building ratio badges for the apt and officetel groups only; rowhouse items get same-dong comparisons.",
   "months": 12,
   "sameBuilding": {
+    "groups": [
+      "apt",
+      "officetel"
+    ],
     "apis": [
       "apt",
       "rh",
       "offi"
     ],
     "areaTolerance": 0.1,
-    "minDeals": 3
+    "minDeals": 3,
+    "maxShown": 10
   },
   "sameDong": {
     "areaTolerance": 0.3,

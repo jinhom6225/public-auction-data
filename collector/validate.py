@@ -24,6 +24,7 @@ TEXT_LIMITS = {"name": 602, "emdName": 20, "assetType": 20, "lowestBidText": 30,
 USAGE_TEXT_LIMIT = 30
 MAX_FAIL_COUNT = 999   # D13 said 99; one real item has 108 failed rounds.
 MAX_DEALS = 10
+MIN_SAME_BUILDING = 3   # compare_params.json sameBuilding.minDeals (a test keeps them equal)
 MAX_NEXT_ROUNDS = 3
 COMPARE_KINDS = ("sameBuilding", "sameDong", "none")
 COMPARE_FIELDS = {
@@ -139,8 +140,16 @@ def _compare_ok(compare: object) -> bool:
         return False
     if kind == "sameDong":
         return n == len(deals)
-    return (n >= len(deals) and amount(compare["estimate"])
+    return (n >= MIN_SAME_BUILDING and len(deals) == min(n, MAX_DEALS) and amount(compare["estimate"])
             and _optional(compare["ratio"], lambda v: _int(v) and 0 <= v <= MAX_RATIO))
+
+
+def _ratio_allowed(r: Mapping) -> bool:
+    """LOW-1: share items and items without a lowest bid have no ratio."""
+    compare = r["compare"]
+    if not isinstance(compare, dict) or compare.get("kind") != "sameBuilding" or compare.get("ratio") is None:
+        return True
+    return r["share"] is False and r["lowestBid"] is not None
 
 
 def _next_rounds_ok(rounds: object) -> bool:
@@ -179,7 +188,7 @@ def _value_checks(r: Mapping) -> dict[str, bool]:
         "failCount": _int(r["failCount"]) and 0 <= r["failCount"] <= MAX_FAIL_COUNT,
         "thumb": _https(r["thumb"]), "onbidUrl": _https(r["onbidUrl"]),
         "firstSeen": _date_ok(r["firstSeen"], required=True), "priceDropAt": _date_ok(r["priceDropAt"]),
-        "compare": _compare_ok(r["compare"]), "nextRounds": _next_rounds_ok(r["nextRounds"]),
+        "compare": _compare_ok(r["compare"]) and _ratio_allowed(r), "nextRounds": _next_rounds_ok(r["nextRounds"]),
     }
 
 
