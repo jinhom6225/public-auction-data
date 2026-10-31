@@ -48,6 +48,11 @@ class RecordShapeTest(unittest.TestCase):
         self.assertIsNone(record["bidStart"])
         self.assertIsNone(record["bidEnd"])
 
+    def test_one_sided_placeholder_schedule_keeps_the_item(self):
+        record, result = one(cltrBidBgngDt="202611021000", cltrBidEndDt="299912301600")
+        self.assertEqual((record["bidStart"], record["bidEnd"]), (None, None))
+        self.assertEqual(dict(result.dropped), {})
+
     def test_http_thumbnail_is_dropped_field_only(self):
         record, _ = one(thnlImgUrlAdr="http://www.onbid.co.kr/x.jpg")
         self.assertIsNone(record["thumb"])
@@ -92,6 +97,14 @@ class DropTest(unittest.TestCase):
         self.assertIsNone(record)
         self.assertEqual(result.closed, 1)
         self.assertEqual(dict(result.dropped), {})
+
+    def test_keyless_rows_count_once_per_item(self):
+        # L7: rows without cltrMngNo are grouped by onbidCltrno before counting.
+        rows = [raw_row(key=None, onbidCltrno=1), raw_row(key=None, onbidCltrno=1),
+                raw_row(key="", onbidCltrno=2), raw_row(key="C")]
+        result = normalize_item.normalize_all(rows, CTX)
+        self.assertEqual(dict(result.dropped), {"no key": 2})
+        self.assertEqual(result.candidates, 3)
 
     def test_lease_and_negotiated_rows_are_filtered(self):
         rows = [raw_row(key="A", dspsMthodCd="0002"), raw_row(key="B", pvctTrgtYn="Y"), raw_row(key="C")]

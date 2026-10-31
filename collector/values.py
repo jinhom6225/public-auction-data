@@ -14,8 +14,8 @@ MAX_AREA = 10**7
 MAX_RATIO = 100_000
 LOWEST_BID_TEXT_LIMIT = 30
 PLACEHOLDER_YEAR = 2900
-_DIGITS = re.compile(r"\d+")
-_BID_TIME = re.compile(r"(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})")
+_DIGITS = re.compile(r"[0-9]+")
+_BID_TIME = re.compile(r"([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})")
 _LINK_FIELDS = ("onbidCltrno", "onbidPbancNo", "pbctNo", "pbctCdtnNo")
 
 
@@ -71,6 +71,19 @@ def bid_datetime(text: object) -> datetime.datetime | None:
 def bid_time(text: object) -> str | None:
     moment = bid_datetime(text)
     return moment.isoformat() if moment else None
+
+
+def is_placeholder(text: object) -> bool:
+    """The 2999 "schedule not fixed" value Onbid uses (A7 ③)."""
+    match = _BID_TIME.fullmatch(text) if isinstance(text, str) else None
+    return bool(match) and int(match.group(1)) >= PLACEHOLDER_YEAR
+
+
+def bid_pair(start: object, end: object) -> tuple[str | None, str | None]:
+    """(bidStart, bidEnd); a 2999 placeholder on either side nulls both."""
+    if is_placeholder(start) or is_placeholder(end):
+        return None, None
+    return bid_time(start), bid_time(end)
 
 
 def onbid_https(url: object) -> str | None:

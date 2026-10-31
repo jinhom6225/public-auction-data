@@ -52,7 +52,7 @@ class SecretLeakTest(unittest.TestCase):
             transport = RecordingTransport(handler)
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 code = collect.main(["collect", "--out", out, "--first-run", "--now", "2026-11-01T20:10:00Z"],
-                                    env=env, transport=transport)
+                                    env=env, transport=transport, sleep=lambda seconds: None)
             files = b"".join(open(os.path.join(r, n), "rb").read()
                              for r, _, names in os.walk(root) for n in names)
             return code, stdout.getvalue(), stderr.getvalue(), files, transport

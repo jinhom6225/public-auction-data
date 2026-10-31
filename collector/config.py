@@ -43,6 +43,12 @@ DAILY_CAPS = {"onbid": 900}
 # following step 4c.
 MAX_DAILY_DECREASE = 0.40
 
+# Review M3: a province that had at least PROVINCE_GUARD_MIN items yesterday
+# and falls by more than MAX_PROVINCE_DECREASE fails the run (a missing
+# province would otherwise pass the national 40% rule).
+PROVINCE_GUARD_MIN = 50
+MAX_PROVINCE_DECREASE = 0.60
+
 # D13: records the collector itself drops. More than this share, or more
 # than DROP_LIMIT_COUNT, means the source format changed: fail the run.
 DROP_LIMIT_SHARE = 0.20

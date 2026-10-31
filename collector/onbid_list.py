@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import urllib.parse
 from dataclasses import dataclass
 
@@ -22,6 +23,8 @@ from collector.http_client import ApiClient, result_code_of
 
 API = "onbid"
 OK_CODE = "00"
+RETRY_WAIT_SECONDS = 3.0
+_ASCII_DIGITS = re.compile(r"[0-9]+")
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,7 @@ class Page:
 def page_number_of(url: str) -> int:
     """pageNo of a list request URL (used by the offline fixture transport)."""
     values = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("pageNo", ["0"])
-    return int(values[0]) if values[0].isdigit() else 0
+    return int(values[0]) if _ASCII_DIGITS.fullmatch(values[0]) else 0
 
 
 def _fail(reason: str, code: str | None = None) -> ApiError:
@@ -55,7 +58,7 @@ def _items_of(body: dict) -> tuple[dict, ...]:
 
 def _count(body: dict, name: str) -> int:
     value = body.get(name)
-    if isinstance(value, str) and value.isdigit():
+    if isinstance(value, str) and _ASCII_DIGITS.fullmatch(value):
         value = int(value)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise _fail(f"bad {name}")
@@ -78,7 +81,9 @@ def parse_page(raw: bytes) -> Page:
 def _fetch_page(client: ApiClient, budget: Budget, page_no: int, page_size: int) -> tuple[Page, Budget]:
     params = {**ONBID_PARAMS, "pageNo": str(page_no), "numOfRows": str(page_size)}
     last_error: ApiError | None = None
-    for _ in range(2):
+    for attempt in range(2):
+        if attempt:
+            client.pause(RETRY_WAIT_SECONDS)
         budget = budget.spend(API)
         try:
             return parse_page(client.get(ONBID_OPERATION, ONBID_URL, params, ONBID_MAX_BYTES)), budget
@@ -106,4 +111,6 @@ def fetch_all(client: ApiClient, budget: Budget, page_size: int = ONBID_PAGE_SIZ
         rows.extend(page.rows)
     if len(rows) != first.total:
         raise _fail("row count mismatch")
+    if len({(row.get("cltrMngNo"), row.get("pbctCdtnNo")) for row in rows}) != first.total:
+        raise _fail("duplicate rows across pages")
     return rows, budget

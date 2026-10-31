@@ -20,6 +20,7 @@ from typing import Iterable, Mapping
 from collector.config import SCHEMA_VERSION, SEEN_RETENTION_DAYS
 
 ENTRY_FIELDS = ("firstSeen", "lastLowestBid", "priceDropAt", "prevLowestBid", "lastSeen")
+OPTIONAL_DEFAULTS = {"lastLowestBid": None, "priceDropAt": None, "prevLowestBid": None}
 
 
 def _fresh(today: str) -> dict:
@@ -57,15 +58,28 @@ def apply(records: Iterable[Mapping], previous: Mapping[str, Mapping] | None,
     return out, {key: seen[key] for key in sorted(seen)}
 
 
-def _entry_ok(entry: object) -> bool:
-    if not isinstance(entry, dict) or set(entry) != set(ENTRY_FIELDS):
-        return False
+def _is_date(value: object) -> bool:
     try:
-        datetime.date.fromisoformat(entry["firstSeen"])
-        datetime.date.fromisoformat(entry["lastSeen"])
+        datetime.date.fromisoformat(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return False
     return True
+
+
+def _is_amount(value: object) -> bool:
+    return value is None or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def _entry(entry: object) -> dict:
+    """Entry with optional fields defaulted; extra fields are kept (L2)."""
+    if not isinstance(entry, dict) or not _is_date(entry.get("firstSeen")) or not _is_date(entry.get("lastSeen")):
+        raise ValueError("seen.json entry needs firstSeen and lastSeen dates")
+    full = {**OPTIONAL_DEFAULTS, **entry}
+    if not (_is_amount(full["lastLowestBid"]) and _is_amount(full["prevLowestBid"])):
+        raise ValueError("seen.json entry has a bad amount")
+    if full["priceDropAt"] is not None and not _is_date(full["priceDropAt"]):
+        raise ValueError("seen.json entry has a bad priceDropAt")
+    return full
 
 
 def parse(data: object) -> dict[str, dict]:
@@ -73,9 +87,9 @@ def parse(data: object) -> dict[str, dict]:
     if not isinstance(data, dict) or data.get("schemaVersion") != SCHEMA_VERSION:
         raise ValueError("seen.json has an unknown shape")
     items = data.get("items")
-    if not isinstance(items, dict) or not all(_entry_ok(e) for e in items.values()):
-        raise ValueError("seen.json has a bad entry")
-    return {key: dict(entry) for key, entry in items.items()}
+    if not isinstance(items, dict):
+        raise ValueError("seen.json has no items")
+    return {key: _entry(entry) for key, entry in items.items()}
 
 
 def render(seen: Mapping[str, Mapping]) -> dict:

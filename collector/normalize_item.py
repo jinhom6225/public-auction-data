@@ -93,8 +93,7 @@ def build_record(key: str, picked: rounds.Picked, location: Location, usage: dic
         "assetType": _text(row.get("prptDivNm")),
         "share": row.get("alcYn") == "Y",
         **_numbers(row),
-        "bidStart": values.bid_time(row.get("cltrBidBgngDt")),
-        "bidEnd": values.bid_time(row.get("cltrBidEndDt")),
+        **dict(zip(("bidStart", "bidEnd"), values.bid_pair(row.get("cltrBidBgngDt"), row.get("cltrBidEndDt")))),
         "thumb": values.onbid_https(row.get("thnlImgUrlAdr")),
         "onbidUrl": values.item_link(row),
         "nextRounds": rounds.next_rounds(picked),
@@ -129,6 +128,12 @@ def normalize_item(key: str, rows: list[Mapping], ctx: Context, unknown: Counter
     return NormalizedItem(record, location.sgg[:2], code, ctx.usage.rtms_of(code), tuple(rows))
 
 
+def _keyless_items(rows: list[Mapping]) -> int:
+    """L7: rows without cltrMngNo, counted once per onbidCltrno."""
+    keyless = [row for row in rows if not isinstance(row.get("cltrMngNo"), str) or not row["cltrMngNo"]]
+    return len({row.get("onbidCltrno") if row.get("onbidCltrno") is not None else id(row) for row in keyless})
+
+
 def _in_scope(row: Mapping) -> bool:
     return row.get("dspsMthodCd") == SALE and row.get("pvctTrgtYn") == BID_LIST
 
@@ -138,9 +143,9 @@ def normalize_all(rows: Iterable[Mapping], ctx: Context) -> NormalizeResult:
     kept = [row for row in rows if _in_scope(row)]
     items, dropped, unknown, closed = [], Counter(), Counter(), 0
     groups = rounds.group_by_key(kept)
-    keyless = sum(1 for row in kept if not isinstance(row.get("cltrMngNo"), str) or not row["cltrMngNo"])
+    keyless = _keyless_items(kept)
     if keyless:
-        dropped["no key (rows)"] += keyless
+        dropped["no key"] += keyless
     for key, group in groups.items():
         outcome = normalize_item(key, group, ctx, unknown)
         if outcome is None:

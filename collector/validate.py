@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import datetime
 import re
+import urllib.parse
 from typing import Mapping
 
+from collector.config import MAX_URL_LENGTH, ONBID_HOST
 from collector.region_index import RegionIndex
 from collector.usage import GROUPS
 from collector.values import MAX_AMOUNT, MAX_AREA, MAX_RATIO
@@ -30,10 +32,10 @@ FIELDS = (
     "bidEnd", "thumb", "onbidUrl", "firstSeen", "priceDropAt", "prevLowestBid", "compare", "nextRounds",
 )
 KEY = re.compile(r"[A-Za-z0-9_\-]{1,40}")
-KST_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00")
-UTC_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
-DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-DIGITS = {"pnu": re.compile(r"\d{19}"), "umd": re.compile(r"\d{10}")}
+KST_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+09:00")
+UTC_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+DIGITS = {"pnu": re.compile(r"[0-9]{19}"), "umd": re.compile(r"[0-9]{10}")}
 
 
 def _int(value: object) -> bool:
@@ -71,7 +73,13 @@ def _text_ok(value: object, limit: int, required: bool = False) -> bool:
 
 
 def _https(value: object) -> bool:
-    return value is None or (isinstance(value, str) and value.startswith("https://") and len(value) <= 2048)
+    """https on the Onbid host only (S-L4); the app allows the same host."""
+    if value is None:
+        return True
+    if not isinstance(value, str) or len(value) > MAX_URL_LENGTH:
+        return False
+    parts = urllib.parse.urlsplit(value)
+    return parts.scheme == "https" and parts.netloc == ONBID_HOST
 
 
 def _optional(value: object, check) -> bool:
@@ -173,4 +181,4 @@ def region_file_ok(entry: object) -> bool:
     if not isinstance(entry, dict) or not isinstance(entry.get("sido"), str):
         return False
     sido = entry["sido"]
-    return bool(re.fullmatch(r"\d{2}", sido)) and entry.get("file") == f"items/{sido}.json"
+    return bool(re.fullmatch(r"[0-9]{2}", sido)) and entry.get("file") == f"items/{sido}.json"

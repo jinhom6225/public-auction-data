@@ -68,6 +68,17 @@ class RecordRulesTest(unittest.TestCase):
         self.assertIn("invalid emdName", self.check(emdName="가" * 21))
         self.assertIn("invalid name", self.check(name=""))
         self.assertEqual(self.check(name="가" * 301), [])
+        self.assertEqual(self.check(name="가" * 602), [])
+        self.assertIn("invalid name", self.check(name="가" * 603))
+        self.assertEqual(self.check(round="1" * 10), [])
+        self.assertIn("invalid round", self.check(round="1" * 11))
+
+    def test_links_must_be_on_the_onbid_host(self):
+        # S-L4
+        for field in ("thumb", "onbidUrl"):
+            for bad in ("https://evil.example/x", "https://www.onbid.co.kr.evil.example/x",
+                        "https://user@www.onbid.co.kr/x"):
+                self.assertIn(f"invalid {field}", self.check(**{field: bad}))
 
     def test_usage_and_compare(self):
         self.assertIn("invalid usage", self.check(usage={"l": None, "m": None, "s": None, "group": "boat"}))

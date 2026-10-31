@@ -30,8 +30,8 @@ import sys
 DATASET = "15063424"
 SCHEMA_VERSION = 1
 HEADER = ["법정동코드", "시도명", "시군구명", "읍면동명", "리명", "순번", "생성일자"]
-CODE = re.compile(r"\d{10}")
-DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+CODE = re.compile(r"[0-9]{10}")
+DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 def _rows(text: str) -> list[list[str]]:

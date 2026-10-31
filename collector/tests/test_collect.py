@@ -22,6 +22,12 @@ def rows_for(count, price=665000000):
                     cltrBidBgngDt="202611091000", cltrBidEndDt="202611111700") for i in range(count)]
 
 
+def busan_rows(count, start=0):
+    return [raw_row(key=f"2025-26000-{i:03d}", lctnSdnm="부산광역시", lctnSggnm="중구", lctnEmdNm="영주동",
+                    ltnoPnu=None, onbidCltrNm="부산광역시 중구 영주동 1", cltrBidBgngDt="202611091000",
+                    cltrBidEndDt="202611111700") for i in range(start, start + count)]
+
+
 def paged(rows, page_size=1000, fail_page=None):
     def handler(url, i):
         page = page_no_of(url)
@@ -56,7 +62,7 @@ class CollectCase(unittest.TestCase):
         stdout, stderr = io.StringIO(), io.StringIO()
         argv = ["collect", "--out", self.out, "--now", now, *args]
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = collect.main(argv, env=env, transport=transport)
+            code = collect.main(argv, env=env, transport=transport, sleep=lambda seconds: None)
         return code, stdout.getvalue(), stderr.getvalue()
 
     def first_run_into_prev(self, rows):
@@ -113,6 +119,28 @@ class SuccessTest(CollectCase):
                                         now="2026-10-31T20:10:00Z")
         self.assertEqual(code, 0, err)
         self.assertEqual(snapshot(self.out), snapshot(netguard.fixture_path("golden")))
+
+    def test_boundary_fixture_two_days_match_the_golden_copies(self):
+        """M6: hand-made edge cases; the app's items_sample/boundary_day2 copies day 2."""
+        base = netguard.fixture_path("boundary")
+        code, _, err = self.run_collect(None, "--first-run", "--offline-fixtures", os.path.join(base, "day1"),
+                                        env={}, now="2026-10-31T20:10:00Z")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(snapshot(self.out), snapshot(netguard.fixture_path("golden_boundary", "day1")))
+        os.rename(self.out, self.prev)
+        code, _, err = self.run_collect(None, "--prev", self.prev, "--offline-fixtures",
+                                        os.path.join(base, "day2"), env={}, now="2026-11-01T20:10:00Z")
+        self.assertEqual(code, 0, err)
+        day2 = snapshot(self.out)
+        self.assertEqual(day2, snapshot(netguard.fixture_path("golden_boundary", "day2")))
+        items = {i["key"]: i for i in json.loads(day2[os.path.join("v1", "items", "11.json")])["items"]}
+        self.assertEqual(len(items["B-NAME-602"]["name"]), 602)
+        self.assertNotIn("B-NAME-603", items)
+        self.assertEqual(items["B-FAIL-108"]["failCount"], 108)
+        self.assertEqual((items["B-ONESIDE"]["bidStart"], items["B-ONESIDE"]["bidEnd"]), (None, None))
+        self.assertEqual((items["B-DROP"]["priceDropAt"], items["B-DROP"]["prevLowestBid"]), ("2026-11-02", 1000000))
+        self.assertEqual(items["B-NEW"]["firstSeen"], "2026-11-02")
+        self.assertEqual(items["B-DROP"]["firstSeen"], "2026-11-01")
 
     def test_offline_fixtures_need_no_key(self):
         fixtures = netguard.fixture_path("onbid_pages")
@@ -190,13 +218,51 @@ class FailureRulesTest(CollectCase):
         code, _, _ = self.run_collect(paged(rows_for(1)), "--first-run", "--prev", self.prev)
         self.assertEqual(code, 64)
 
-    def test_unexpected_crash_prints_no_traceback(self):
+    def test_unexpected_crash_logs_a_redacted_traceback_and_exits_3(self):
+        # M2: collector bugs get their own exit code and a traceback without the key.
         before = self.seed_out()
-        with mock.patch.object(collect, "_collect", side_effect=KeyError("boom " + FAKE_KEY)):
+        url = "https://apis.data.go.kr/x?serviceKey=" + FAKE_KEY + "&pageNo=1"
+        with mock.patch.object(collect, "_collect", side_effect=KeyError("boom " + FAKE_KEY + " " + url)):
             code, out, err = self.run_collect(paged(rows_for(1)), "--first-run")
-        self.assert_untouched(before, code, 1)
-        self.assertNotIn("Traceback", err)
+        self.assert_untouched(before, code, 3)
+        self.assertIn("Traceback", err)
+        self.assertIn("KeyError", err)
         self.assertNotIn(FAKE_KEY, out + err)
+        self.assertNotIn("serviceKey=", out + err)
+
+    def test_log_redacts_the_stripped_key(self):
+        # S-L6: the environment value may carry spaces; the client uses the stripped key.
+        with mock.patch.object(collect, "_collect", side_effect=KeyError(FAKE_KEY)):
+            code, out, err = self.run_collect(paged(rows_for(1)), "--first-run",
+                                              env={"DATA_GO_KR_SERVICE_KEY": "  " + FAKE_KEY + "\n"})
+        self.assertEqual(code, 3)
+        self.assertNotIn(FAKE_KEY, out + err)
+
+    def test_province_falling_more_than_60_percent_exits_2(self):
+        # M3: 부산 stays, 서울 (50 yesterday) falls to 19 -> national -21%, 서울 -62%.
+        self.first_run_into_prev(rows_for(50) + busan_rows(100))
+        before = self.seed_out()
+        code, _, err = self.run_collect(paged(rows_for(19) + busan_rows(100)), "--prev", self.prev, now=NEXT_DAY)
+        self.assert_untouched(before, code, 2)
+        self.assertIn("11", err)
+
+    def test_province_guard_boundaries(self):
+        self.first_run_into_prev(rows_for(50) + busan_rows(100))
+        code, _, _ = self.run_collect(paged(rows_for(20) + busan_rows(100)), "--prev", self.prev, now=NEXT_DAY)
+        self.assertEqual(code, 0)    # exactly -60% passes
+
+    def test_small_province_is_not_guarded(self):
+        self.first_run_into_prev(rows_for(49) + busan_rows(100))
+        code, _, _ = self.run_collect(paged(rows_for(1) + busan_rows(100)), "--prev", self.prev, now=NEXT_DAY)
+        self.assertEqual(code, 0)
+
+    def test_history_file_is_validated_before_writing(self):
+        # L1
+        before = self.seed_out()
+        with mock.patch("collector.seen_history.render", return_value={"schemaVersion": 1, "items": {"A": {}}}):
+            code, _, err = self.run_collect(paged(rows_for(2)), "--first-run")
+        self.assert_untouched(before, code, 2)
+        self.assertIn("seen.json", err)
 
 
 if __name__ == "__main__":

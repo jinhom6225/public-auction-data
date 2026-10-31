@@ -44,6 +44,15 @@ class ParsePageTest(unittest.TestCase):
         empty["body"]["items"] = ""
         self.assertEqual(onbid_list.parse_page(json.dumps(empty).encode()).rows, ())
 
+    def test_non_ascii_digits_are_not_counts(self):
+        # L6: str.isdigit() accepts "²" and full-width digits; counts must be ASCII.
+        for bad in ("²", "１２"):
+            body = json.loads(page_body([], 0))
+            body["body"]["totalCount"] = bad
+            with self.assertRaises(ApiError):
+                onbid_list.parse_page(json.dumps(body).encode())
+        self.assertEqual(onbid_list.page_number_of("https://x/y?pageNo=%EF%BC%92"), 0)
+
     def test_not_json_is_an_error(self):
         with self.assertRaises(ApiError):
             onbid_list.parse_page(b"<html>")
@@ -115,6 +124,23 @@ class FetchAllTest(unittest.TestCase):
         with self.assertRaises(BudgetExceeded):
             onbid_list.fetch_all(api, budget)
         self.assertEqual(len(transport.urls), 1)
+
+    def test_duplicate_rows_across_pages_fail(self):
+        # M1: the same rows served twice add up to totalCount but are not the full list.
+        api, _ = make_client(lambda url, i: ok(page_body(rows(1000), 2000, page_no_of(url))))
+        with self.assertRaises(ApiError) as ctx:
+            onbid_list.fetch_all(api, Budget.load(None, TODAY))
+        self.assertEqual(ctx.exception.reason, "duplicate rows across pages")
+
+    def test_retry_waits_before_the_second_try(self):
+        # M4: a short pause (2-5 s, injected sleep) before retrying a failed page.
+        clock = FakeClock()
+        transport = RecordingTransport(
+            lambda url, i: Response(status=500, body=b"") if i == 0 else ok(page_body(rows(2), 2)))
+        api = ApiClient(transport, FAKE_KEY, monotonic=clock.monotonic, sleep=clock.sleep)
+        onbid_list.fetch_all(api, Budget.load(None, TODAY))
+        self.assertTrue(2 <= onbid_list.RETRY_WAIT_SECONDS <= 5)
+        self.assertIn(onbid_list.RETRY_WAIT_SECONDS, clock.sleeps)
 
     def test_too_many_pages_is_refused(self):
         api, transport = make_client(lambda url, i: ok(page_body(rows(1), 10_000_000)))

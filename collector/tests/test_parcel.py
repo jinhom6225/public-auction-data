@@ -25,6 +25,22 @@ class OnbidPnuTest(unittest.TestCase):
         location = Location("12130", "1213033000", "화양면")
         self.assertEqual(parcel.from_onbid_pnu("1213033027114310001", location, INDEX), "1213033027114310001")
 
+    def test_pnu_of_another_district_is_discarded(self):
+        # M5: address says 종로구 청운동, PNU points elsewhere -> do not trust it.
+        self.assertIsNone(parcel.from_onbid_pnu("1114010100100120003", CHEONGUN, INDEX))
+        self.assertIsNone(parcel.from_onbid_pnu("1111010200100120003", CHEONGUN, INDEX))
+        self.assertEqual(parcel.from_onbid_pnu("1111010100100120003", Location("11110", None, None), INDEX),
+                         "1111010100100120003")
+
+    def test_discarded_pnu_falls_back_to_the_item_name(self):
+        row = {"ltnoPnu": "1114010100100120003", "onbidCltrNm": "서울특별시 종로구 청운동 7-1 주택"}
+        self.assertEqual(parcel.pnu_of(row, CHEONGUN, INDEX), "1111010100000070001")
+
+    def test_split_code_with_village_is_not_trusted(self):
+        # L3: split districts renumbered their codes; a 리 code cannot be carried over.
+        location = Location("28275", "2827511000", "가좌동")
+        self.assertIsNone(parcel.from_onbid_pnu("2826011221100010002", location, INDEX))
+
     def test_bad_values(self):
         for bad in (None, "", "12345", "111101010010012000X", "11110101001001200031"):
             self.assertIsNone(parcel.from_onbid_pnu(bad, CHEONGUN, INDEX))
@@ -54,6 +70,15 @@ class NameJibunTest(unittest.TestCase):
         self.assertIsNone(parcel.from_item_name("여수시 화양면 없는리 1", location, INDEX))
         self.assertIsNone(parcel.from_item_name("여수시 화양면 서촌리 일원", location, INDEX))
         self.assertIsNone(parcel.from_item_name("장당동 483-6", Location("41220", None, "장당동"), INDEX))
+
+    def test_township_with_villages_needs_a_village_in_the_name(self):
+        # L4: 화양면 has 리; "화양면 1431" cannot be placed on a 리 code.
+        location = Location("12130", "1213033000", "화양면")
+        self.assertIsNone(parcel.from_item_name("여수시 화양면 1431-1", location, INDEX))
+
+    def test_non_ascii_digits_are_not_lots(self):
+        location = Location("41220", "4122010200", "장당동")
+        self.assertIsNone(parcel.from_item_name("평택시 장당동 ４８３", location, INDEX))
 
     def test_lot_number_longer_than_four_digits_is_ignored(self):
         location = Location("41220", "4122010200", "장당동")

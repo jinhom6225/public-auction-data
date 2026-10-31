@@ -56,6 +56,24 @@ class DateTimeTest(unittest.TestCase):
             self.assertIsNone(values.bid_time(bad))
 
 
+class OneSidedPlaceholderTest(unittest.TestCase):
+    def test_either_side_2999_makes_both_null(self):
+        # L5 / A7 3: "일정 미정" instead of dropping the record.
+        self.assertEqual(values.bid_pair("202611021000", "299912301600"), (None, None))
+        self.assertEqual(values.bid_pair("299912301000", "202611041700"), (None, None))
+        self.assertEqual(values.bid_pair("202611021000", "202611041700"),
+                         ("2026-11-02T10:00:00+09:00", "2026-11-04T17:00:00+09:00"))
+
+    def test_garbage_on_one_side_is_not_hidden(self):
+        self.assertEqual(values.bid_pair("202611021000", "garbage"), ("2026-11-02T10:00:00+09:00", None))
+
+
+class AsciiDigitsTest(unittest.TestCase):
+    def test_non_ascii_digits_are_text_not_numbers(self):
+        self.assertEqual(values.lowest_bid("１２３"), (None, "１２３"))
+        self.assertIsNone(values.bid_time("２０２６１１０２１０００"))
+
+
 class UrlTest(unittest.TestCase):
     def test_thumbnail_https_onbid_only(self):
         good = "https://www.onbid.co.kr/op/cm/x.do?a=1"

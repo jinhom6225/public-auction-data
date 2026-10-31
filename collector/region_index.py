@@ -20,7 +20,7 @@ from collector.config import DATA_DIR
 
 SEJONG_SIDO = "36"
 SEJONG_SGG_NAME = "세종시"
-_PNU = re.compile(r"\d{19}")
+_PNU = re.compile(r"[0-9]{19}")
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,7 @@ class RegionIndex:
     sgg_by_name: Mapping[tuple[str, str], str]
     emd_by_name: Mapping[tuple[str, str], str]
     ri_by_name: Mapping[tuple[str, str], str | None]
+    village_prefixes: frozenset[str]
 
     @staticmethod
     def load(regions: dict | None = None, region_map: dict | None = None) -> "RegionIndex":
@@ -78,6 +79,7 @@ class RegionIndex:
             sgg_by_name=freeze({(v["sido"], v["name"]): code for code, v in sggs.items()}),
             emd_by_name=freeze({(code[:5], name): code for code, name in regions["emds"].items()}),
             ri_by_name=freeze(_unique_index(regions["ris"])),
+            village_prefixes=frozenset(code[:8] for code in regions["ris"]),
         )
 
     # Lookups ---------------------------------------------------------------
@@ -94,6 +96,10 @@ class RegionIndex:
 
     def emd_code(self, sgg: str, name: str | None) -> str | None:
         return self.emd_by_name.get((sgg, name)) if name else None
+
+    def has_villages(self, umd: str) -> bool:
+        """Whether the 읍·면 [umd] has 리 under it."""
+        return umd[:8] in self.village_prefixes
 
     def ri_code(self, umd: str, name: str) -> str | None:
         return self.ri_by_name.get((umd[:8], name))

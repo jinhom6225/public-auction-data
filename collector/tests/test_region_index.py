@@ -30,6 +30,13 @@ class AddressFirstTest(unittest.TestCase):
         found = locate(lctnSdnm="인천광역시", lctnSggnm="서해구", lctnEmdNm="왕길동", ltnoPnu=None)
         self.assertEqual(found, Location("28290", "2829010900", "왕길동"))
 
+    def test_same_name_dong_outside_the_split_group_is_not_used(self):
+        # 금곡동 exists in 검단구 (28290, sibling of 서해구) and 제물포구 (28125, not a sibling).
+        found = locate(lctnSdnm="인천광역시", lctnSggnm="서해구", lctnEmdNm="금곡동", ltnoPnu=None)
+        self.assertEqual(found, Location("28290", "2829010700", "금곡동"))
+        found = locate(lctnSdnm="인천광역시", lctnSggnm="제물포구", lctnEmdNm="금곡동", ltnoPnu=None)
+        self.assertEqual(found, Location("28125", "2812510600", "금곡동"))
+
     def test_renamed_dong_keeps_district(self):
         found = locate(lctnSdnm="경기도", lctnSggnm="용인시 처인구", lctnEmdNm="양지면", ltnoPnu=None)
         self.assertEqual(found, Location("41461", None, "양지면"))

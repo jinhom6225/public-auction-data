@@ -5,6 +5,7 @@ from __future__ import annotations
 EXIT_OK = 0
 EXIT_CALL_FAILED = 1
 EXIT_INVALID = 2
+EXIT_BUG = 3
 EXIT_USAGE = 64
 
 

@@ -90,8 +90,18 @@ class UrllibTransportTest(unittest.TestCase):
         self.assertIsNone(handler.redirect_request(None, None, 302, "Found", {}, "https://evil.example/"))
 
     def test_real_transport_hits_the_network_guard(self):
+        with self.assertRaises(netguard.NetworkBlocked):
+            http_client.urllib_transport(URL + "?a=1", 1, 100)
         with self.assertRaises(ApiError):
             client(http_client.urllib_transport).get("op", URL, {}, max_bytes=100)
+
+
+class ResultCodeTest(unittest.TestCase):
+    def test_json_codes_are_limited_to_safe_characters(self):
+        self.assertEqual(http_client.result_code_of(b'{"result":{"resultCode":"11"}}'), "11")
+        for bad in (b'{"result":{"resultCode":"a b"}}', b'{"result":{"resultCode":"<x>"}}',
+                    b'{"header":{"resultCode":"%41"}}'):
+            self.assertIsNone(http_client.result_code_of(bad))
 
 
 if __name__ == "__main__":

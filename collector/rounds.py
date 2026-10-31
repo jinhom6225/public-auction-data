@@ -11,6 +11,7 @@ last; ties break on `pbctCdtnNo` so the choice is deterministic.
 from __future__ import annotations
 
 import datetime
+import json
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
@@ -39,9 +40,11 @@ def group_by_key(rows: Iterable[Mapping]) -> dict[str, list[Mapping]]:
 
 
 def _order(row: Mapping) -> tuple:
+    """Start time, condition number, then the whole row: a total order."""
     start = values.bid_datetime(row.get("cltrBidBgngDt"))
     number = row.get("pbctCdtnNo")
-    return (start or _FAR_FUTURE, number if isinstance(number, int) else 0)
+    whole = json.dumps(row, sort_keys=True, ensure_ascii=False, default=str)
+    return (start or _FAR_FUTURE, number if isinstance(number, int) else 0, whole)
 
 
 def _still_open(row: Mapping, now: datetime.datetime) -> bool:
@@ -63,12 +66,10 @@ def pick(rows: Iterable[Mapping], now: datetime.datetime) -> Picked | None:
     return Picked(chosen, tuple(later[:MAX_NEXT_ROUNDS]))
 
 
+def _next_round(row: Mapping) -> dict:
+    start, end = values.bid_pair(row.get("cltrBidBgngDt"), row.get("cltrBidEndDt"))
+    return {"bidStart": start, "bidEnd": end, "lowestBid": values.lowest_bid(row.get("lowstBidPrcIndctCont"))[0]}
+
+
 def next_rounds(picked: Picked) -> list[dict]:
-    return [
-        {
-            "bidStart": values.bid_time(r.get("cltrBidBgngDt")),
-            "bidEnd": values.bid_time(r.get("cltrBidEndDt")),
-            "lowestBid": values.lowest_bid(r.get("lowstBidPrcIndctCont"))[0],
-        }
-        for r in picked.upcoming
-    ]
+    return [_next_round(row) for row in picked.upcoming]

@@ -80,6 +80,17 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(old, {"A": entry()})
         self.assertEqual(record, rec("A", 90))
 
+    def test_parse_tolerates_missing_optional_and_extra_fields(self):
+        parsed = seen_history.parse({"schemaVersion": 1, "items": {
+            "A": {"firstSeen": "2026-11-01", "lastSeen": "2026-11-09", "phase3": {"x": 1}}}})
+        self.assertEqual(parsed["A"], {**entry(last_bid=None), "phase3": {"x": 1}})
+        records, seen = seen_history.apply([rec("A", 90)], parsed, TODAY)
+        self.assertEqual(seen["A"]["phase3"], {"x": 1})
+        for bad in ({"lastSeen": "2026-11-09"}, {"firstSeen": "x", "lastSeen": "2026-11-09"},
+                    {"firstSeen": "2026-11-01", "lastSeen": "2026-11-09", "lastLowestBid": "100"}):
+            with self.assertRaises(ValueError):
+                seen_history.parse({"schemaVersion": 1, "items": {"A": bad}})
+
     def test_parse_and_render(self):
         self.assertEqual(seen_history.parse({"schemaVersion": 1, "items": {"A": entry()}}), {"A": entry()})
         for bad in (None, [], {"schemaVersion": 2, "items": {}}, {"schemaVersion": 1, "items": {"A": {}}}):

@@ -31,6 +31,7 @@ Transport = Callable[[str, float, int], Response]
 
 _DTD = re.compile(rb"<!(DOCTYPE|ENTITY)", re.IGNORECASE)
 _XML_CODE = re.compile(rb"<(?:resultCode|returnReasonCode)>\s*([0-9A-Za-z_]{1,10})\s*<")
+_CODE = re.compile(r"[0-9A-Za-z_]{1,10}")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -72,7 +73,7 @@ def _json_code(data: object) -> str | None:
         node: object = data
         for part in path:
             node = node.get(part) if isinstance(node, dict) else None
-        if isinstance(node, (str, int)) and len(str(node)) <= 10:
+        if isinstance(node, (str, int)) and not isinstance(node, bool) and _CODE.fullmatch(str(node)):
             return str(node)
     return None
 
@@ -102,6 +103,10 @@ class ApiClient:
         except Exception:  # noqa: BLE001 - the message could carry the URL
             raise ApiError(operation, reason="transport error") from None
         return self._checked(operation, response, max_bytes)
+
+    def pause(self, seconds: float) -> None:
+        """Wait before a retry, with the injected sleep."""
+        self._sleep(seconds)
 
     def _wait_turn(self) -> None:
         now = self._monotonic()

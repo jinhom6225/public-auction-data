@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Mapping
 
 from collector import seen_history
 from collector.errors import ValidationFailed
@@ -21,6 +23,7 @@ class Previous:
     seen: dict | None
     total: int | None
     budget: object
+    counts: Mapping[str, int] = field(default_factory=lambda: MappingProxyType({}))
 
 
 FIRST_RUN = Previous(seen=None, total=None, budget=None)
@@ -31,19 +34,24 @@ def _read_json(path: str) -> object:
         return json.load(handle)
 
 
-def _total(index: object) -> int:
+def _counts(index: object) -> dict[str, int]:
+    """Item count per province from yesterday's index."""
     regions = index.get("regions") if isinstance(index, dict) else None
     if not isinstance(regions, list) or not regions:
         raise ValueError("no regions")
-    counts = [entry.get("count") if isinstance(entry, dict) else None for entry in regions]
-    if not all(isinstance(c, int) and not isinstance(c, bool) and c >= 0 for c in counts):
-        raise ValueError("bad count")
-    return sum(counts)
+    counts: dict[str, int] = {}
+    for entry in regions:
+        sido = entry.get("sido") if isinstance(entry, dict) else None
+        count = entry.get("count") if isinstance(entry, dict) else None
+        if not isinstance(sido, str) or not (isinstance(count, int) and not isinstance(count, bool) and count >= 0):
+            raise ValueError("bad region entry")
+        counts[sido] = count
+    return counts
 
 
 def load(folder: str) -> Previous:
     try:
-        total = _total(_read_json(os.path.join(folder, "v1", "index.json")))
+        counts = _counts(_read_json(os.path.join(folder, "v1", "index.json")))
         seen = seen_history.parse(_read_json(os.path.join(folder, "cache", "seen.json")))
     except (OSError, ValueError):
         raise ValidationFailed("previous copy is missing or unreadable (v1/index.json, cache/seen.json)") from None
@@ -51,4 +59,4 @@ def load(folder: str) -> Previous:
         budget = _read_json(os.path.join(folder, "cache", "budget.json"))
     except (OSError, ValueError):
         budget = None
-    return Previous(seen=seen, total=total, budget=budget)
+    return Previous(seen=seen, total=sum(counts.values()), budget=budget, counts=MappingProxyType(counts))

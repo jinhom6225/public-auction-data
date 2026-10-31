@@ -7,7 +7,8 @@ Steps: key from the environment -> Onbid list -> normalise -> (Phase 3:
 real-transaction comparison, compare_hook) -> day-to-day history ->
 render -> validate -> write. Nothing under --out changes unless every
 step passed (D29 ⑤). Exit codes: 0 success, 1 call failure (or missing
-key), 2 validation failure, 64 usage error.
+key), 2 validation failure, 3 collector bug (unexpected exception; the
+traceback is logged with the key redacted), 64 usage error.
 
 `--offline-fixtures DIR` reads `onbid_p<N>.json` pages from DIR instead
 of calling the API; no key is read. `--now` pins the clock so two runs on
@@ -18,16 +19,21 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import os
 import sys
+import time
+import traceback
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Callable, Mapping
 
 from collector import compare_hook, key_guard, normalize_item, onbid_list, previous_copy, seen_history
 from collector import validate, validate_output, write_output
 from collector.budget import Budget
-from collector.config import KEY_ENV, KST, MAX_DAILY_DECREASE, ONBID_TPS
-from collector.errors import EXIT_OK, EXIT_USAGE, CollectError, ValidationFailed
+from collector.config import (
+    KEY_ENV, KST, MAX_DAILY_DECREASE, MAX_PROVINCE_DECREASE, ONBID_TPS, PROVINCE_GUARD_MIN,
+)
+from collector.errors import EXIT_BUG, EXIT_OK, EXIT_USAGE, CollectError, ValidationFailed
 from collector.http_client import ApiClient, Response, Transport, urllib_transport
 from collector.normalize_item import Context, NormalizeResult
 
@@ -120,16 +126,37 @@ def _check_decrease(count: int, previous_total: int | None) -> None:
         raise ValidationFailed(f"item count fell more than 40%: {previous_total} -> {count}")
 
 
-def _client(opts: Options, env: Mapping[str, str], transport: Transport | None) -> ApiClient:
+def _check_provinces(records: list[dict], previous_counts: Mapping[str, int]) -> None:
+    """Review M3: a province with >= 50 items yesterday may not fall by more than 60%."""
+    today: dict[str, int] = {}
+    for record in records:
+        today[record["sgg"][:2]] = today.get(record["sgg"][:2], 0) + 1
+    for sido, before in sorted(previous_counts.items()):
+        now = today.get(sido, 0)
+        if before >= PROVINCE_GUARD_MIN and now < before * (1 - MAX_PROVINCE_DECREASE) - 1e-9:
+            raise ValidationFailed(f"province {sido} item count fell more than 60%: {before} -> {now}")
+
+
+def _check_history(files: Mapping[str, bytes]) -> None:
+    """Review L1: the history written today must be readable tomorrow."""
+    try:
+        seen_history.parse(json.loads(files["cache/seen.json"].decode("utf-8")))
+    except (KeyError, UnicodeDecodeError, ValueError):
+        raise ValidationFailed("cache/seen.json would not be readable tomorrow") from None
+
+
+def _client(opts: Options, env: Mapping[str, str], transport: Transport | None,
+            sleep: Callable[[float], None]) -> ApiClient:
     if opts.offline:
-        return ApiClient(transport or fixture_transport(opts.offline), "offline", tps=ONBID_TPS)
+        return ApiClient(transport or fixture_transport(opts.offline), "offline", tps=ONBID_TPS, sleep=sleep)
     key = key_guard.read_key(env)
     key_guard.emit_masks(key, env, sys.stdout)
-    return ApiClient(transport or urllib_transport, key, tps=ONBID_TPS)
+    return ApiClient(transport or urllib_transport, key, tps=ONBID_TPS, sleep=sleep)
 
 
-def _collect(opts: Options, env: Mapping[str, str], transport: Transport | None, log: Log) -> int:
-    client = _client(opts, env, transport)
+def _collect(opts: Options, env: Mapping[str, str], transport: Transport | None, log: Log,
+             sleep: Callable[[float], None] = time.sleep) -> int:
+    client = _client(opts, env, transport, sleep)
     today = opts.now.astimezone(KST).date()
     previous = previous_copy.load(opts.prev) if opts.prev else previous_copy.FIRST_RUN
     rows, budget = onbid_list.fetch_all(client, Budget.load(previous.budget, today.isoformat()))
@@ -141,8 +168,10 @@ def _collect(opts: Options, env: Mapping[str, str], transport: Transport | None,
     records = compare_hook.attach_compare(result.items)   # Phase 3 plugs in here.
     records, seen = seen_history.apply(records, previous.seen, today)
     _check_decrease(len(records), previous.total)
+    _check_provinces(records, previous.counts)
     generated_at = opts.now.strftime("%Y-%m-%dT%H:%M:%SZ")
     files = write_output.render(records, generated_at, context.regions, seen, budget)
+    _check_history(files)
     problems = validate_output.tree_problems(files, opts.now, context.regions)
     if problems:
         raise ValidationFailed(f"output failed validation ({len(problems)}): {problems[:5]}")
@@ -151,22 +180,23 @@ def _collect(opts: Options, env: Mapping[str, str], transport: Transport | None,
     return EXIT_OK
 
 
-def main(argv: list[str], env: Mapping[str, str] | None = None, transport: Transport | None = None) -> int:
+def main(argv: list[str], env: Mapping[str, str] | None = None, transport: Transport | None = None,
+         sleep: Callable[[float], None] = time.sleep) -> int:
     env = os.environ if env is None else env
-    log = Log(env.get(KEY_ENV) or None)
+    log = Log(env.get(KEY_ENV, "").strip() or None)
     try:
         opts = parse_args(argv)
     except UsageError as error:
         log.error(f"usage error: {error}")
         return EXIT_USAGE
     try:
-        return _collect(opts, env, transport, log)
+        return _collect(opts, env, transport, log, sleep)
     except CollectError as error:
         log.error(str(error))
         return error.exit_code
-    except Exception as error:  # noqa: BLE001 - a traceback could carry a URL
-        log.error(f"collector stopped: unexpected {type(error).__name__}")
-        return 1
+    except Exception as error:  # noqa: BLE001 - a collector bug: exit 3, traceback redacted
+        log.error(f"collector stopped: unexpected {type(error).__name__}\n{traceback.format_exc()}")
+        return EXIT_BUG
 
 
 if __name__ == "__main__":

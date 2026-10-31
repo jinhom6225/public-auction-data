@@ -62,6 +62,18 @@ class PickTest(unittest.TestCase):
         rows = [row(9, "202611091000", "202611111700"), row(7, "202611091000", "202611111700")]
         self.assertEqual(rounds.pick(rows, NOW).representative["pbctCdtnNo"], 7)
 
+    def test_genuinely_tied_rows_pick_the_same_row_in_any_order(self):
+        a = row(7, "202611091000", "202611111700", price="900")
+        b = row(7, "202611091000", "202611111700", price="800")
+        first = rounds.pick([a, b], NOW).representative
+        second = rounds.pick([b, a], NOW).representative
+        self.assertEqual(first, second)
+
+    def test_one_sided_placeholder_in_next_rounds_is_fully_null(self):
+        rows = [row(1, "202611091000", "202611111700"), row(2, "202611161000", "299912301600")]
+        self.assertEqual(rounds.next_rounds(rounds.pick(rows, NOW)),
+                         [{"bidStart": None, "bidEnd": None, "lowestBid": 1000}])
+
     def test_unknown_status_is_ignored(self):
         self.assertIsNone(rounds.pick([row(1, "202611091000", "202611111700", "0009")], NOW))
 
