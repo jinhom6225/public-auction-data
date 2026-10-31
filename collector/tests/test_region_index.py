@@ -63,6 +63,33 @@ class PnuFallbackTest(unittest.TestCase):
         self.assertEqual(found, Location("28275", "2827511000", "가좌동"))
 
 
+class RegionMapTableTest(unittest.TestCase):
+    """Every old code in region_map.json lands on a current, selectable district."""
+
+    def test_every_one_to_one_target_is_current(self):
+        for old, new in INDEX.one_to_one.items():
+            with self.subTest(old):
+                self.assertFalse(INDEX.is_selectable(old))
+                self.assertTrue(INDEX.is_selectable(new), new)
+                self.assertEqual(INDEX.sggs[new]["sido"], {"29": "12", "46": "12", "42": "51", "45": "52"}[old[:2]])
+
+    def test_every_split_target_is_current(self):
+        for old, targets in INDEX.split.items():
+            with self.subTest(old):
+                for target in targets:
+                    self.assertTrue(INDEX.is_selectable(target), target)
+
+    def test_one_pnu_per_old_province_family(self):
+        for old in ("29110", "46110", "42110", "45111"):
+            new = INDEX.one_to_one[old]
+            suffix = next(code[5:] for code in INDEX.emds if code[:5] == new)
+            found = locate(lctnSdnm=None, lctnSggnm=None, lctnEmdNm=None, onbidCltrNm="x",
+                           ltnoPnu=old + suffix + "100010000")
+            with self.subTest(old):
+                self.assertEqual(found.sgg, new)
+                self.assertEqual(found.umd, new + suffix)
+
+
 class NameFallbackTest(unittest.TestCase):
     def test_address_from_item_name(self):
         found = locate(lctnSdnm=None, lctnSggnm=None, lctnEmdNm=None, ltnoPnu=None,
