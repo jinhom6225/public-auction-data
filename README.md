@@ -37,13 +37,17 @@ python3 -m collector.validate_output out
 ```
 
 `collect.py` exit codes: 0 success · 1 call failure or missing key ·
-2 validation failure · 64 usage error. On any failure nothing under
-`--out` changes.
+2 validation failure · 3 collector bug (unexpected exception; the
+traceback is logged with the key redacted — fix the code, do not just
+rerun) · 64 usage error. On any failure nothing under `--out` changes.
 
 Failure rules (plan D29): a list page that fails twice fails the run; the
 national item count falling more than 40% versus yesterday fails the run
 (**starting value — fix it after 7 days of `totalCount` observation once
-the workflow runs, step 4c**); a province file over 5MB fails the run;
+the workflow runs, step 4c**); a province that had at least 50 items
+yesterday and falls by more than 60% fails the run; a province file over
+5MB fails the run; the same list row (`cltrMngNo`, `pbctCdtnNo`) on two
+pages fails the run; a failed page is retried once after 3 seconds;
 more than 20% or 500 dropped records fails the run; the daily cap
 (900 calls per API, KST day) is checked before calling.
 
@@ -59,7 +63,8 @@ path with a fake key and checks stdout, stderr and files.
 ## Manual fallback (research Q11)
 
 If Actions is blocked, run the same collector locally and push `data` by
-hand (진호님):
+hand (진호님). Keep same-day manual reruns to **10 or fewer**: a failed run
+does not record its calls, so the daily cap cannot see them.
 
 ```sh
 cd ~/Documents/public-auction-data
@@ -70,10 +75,25 @@ python3 -m collector.collect --out out --prev prev      # --first-run if there i
 python3 -m collector.validate_output out
 (cd out && git init -q -b data && git add v1 cache \
   && git commit -q -m "data: manual $(date -u +%Y-%m-%dT%H:%MZ)" \
-  && git push --force https://github.com/jinhom6225/public-auction-data.git data:data)
+  && git push --force git@github-jinhom:jinhom6225/public-auction-data.git data:data)
 git worktree remove prev && rm -rf out
 unset DATA_GO_KR_SERVICE_KEY
 ```
+
+## Step 4c (진호님): repository settings
+
+After creating the public repository `jinhom6225/public-auction-data` and
+the secret `DATA_GO_KR_SERVICE_KEY`, add two rulesets (Settings → Rules →
+Rulesets):
+
+- `main`: block force pushes and deletion. No pull-request requirement
+  (the workflow pushes the monthly keepalive commit directly).
+- `data`: block deletion only (the workflow force-pushes it daily).
+
+The workflow job runs only on `refs/heads/main` and pins its actions by
+commit SHA (`actions/checkout` v4.4.0, `actions/setup-python` v5.6.0,
+verified with `git ls-remote`); Dependabot (`.github/dependabot.yml`)
+proposes updates monthly.
 
 ## Data files (`collector/data/`)
 
@@ -102,15 +122,30 @@ unset DATA_GO_KR_SERVICE_KEY
 - `collector/tests/fixtures/onbid_pages/onbid_p1.json` — 90 items / 514
   rows of 서울·전남광주·인천 cut from the Phase 1 full dump (not committed
   anywhere) with `collector/dev/cut_fixture.py`.
-- `collector/tests/fixtures/golden/` — the dry-run output of those pages
-  at `--now 2026-10-31T20:10:00Z` (pinned by a test). The app's
-  `test/fixtures/items_sample/` is a copy of `golden/v1/`. Regenerate both
-  only on purpose:
+- `collector/tests/fixtures/boundary/day{1,2}/` — hand-made edge cases
+  over two days (`collector/dev/make_boundary_fixture.py`): names of
+  601/602/603 characters, failCount 108, 2999 schedule on both or one
+  side, private price, share, five rounds, price drop and rise, item gone
+  and item new. `golden_boundary/day1` = first run at
+  `2026-10-31T20:10:00Z`, `golden_boundary/day2` = `--prev day1` at
+  `2026-11-01T20:10:00Z` (pinned by a test).
+- `collector/tests/fixtures/golden/` — the dry-run output of the real
+  pages at `--now 2026-10-31T20:10:00Z` (pinned by a test).
+- The app's `test/fixtures/items_sample/real_day1/` is a copy of
+  `golden/v1/`, and `items_sample/boundary_day2/` of
+  `golden_boundary/day2/v1/`. Regenerate only on purpose:
 
   ```sh
   rm -rf collector/tests/fixtures/golden
   python3 -m collector.collect --out collector/tests/fixtures/golden --first-run \
     --offline-fixtures collector/tests/fixtures/onbid_pages --now 2026-10-31T20:10:00Z
+  F=collector/tests/fixtures
+  python3 -I collector/dev/make_boundary_fixture.py $F/boundary
+  rm -rf $F/golden_boundary
+  python3 -m collector.collect --out $F/golden_boundary/day1 --first-run \
+    --offline-fixtures $F/boundary/day1 --now 2026-10-31T20:10:00Z
+  python3 -m collector.collect --out $F/golden_boundary/day2 --prev $F/golden_boundary/day1 \
+    --offline-fixtures $F/boundary/day2 --now 2026-11-01T20:10:00Z
   ```
 
 ## Known limits
@@ -120,6 +155,10 @@ unset DATA_GO_KR_SERVICE_KEY
   `firstSeen` follows D16 (kept for 90 days); watch the first days after
   step 4c.
 - A failed run does not record its calls in `cache/budget.json` (the data
-  branch is untouched). Onbid uses about 49 of 900 calls a day.
+  branch is untouched). Onbid uses about 49 of 900 calls a day, so keep
+  same-day manual reruns to 10 or fewer.
+- Monthly keepalive: on KST days 1–3, if `main` has no commit yet that
+  month, the workflow commits `status/last_run.md`; a rejected push only
+  warns (the data branch is already published) and is retried next day.
 - Phase 3 (real-transaction comparison) plugs in at
   `collector/compare_hook.py`.

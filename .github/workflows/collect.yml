@@ -3,13 +3,8 @@
 # prev/ -> collect -> validate -> new orphan commit -> force-push `data`.
 # A failed step stops the job before the push, so the app keeps yesterday's
 # copy (D29 5). The service key lives only in the Collect step's env.
-# Never add `set -x` here (D28).
-#
-# TODO(4c): the two action SHAs below are copied from
-# ~/Documents/revenue_tracker/.github/workflows/collect.yml (in use there as
-# v4 / v5). They could not be verified against GitHub offline in Phase 2.
-# Before the first push, confirm each SHA is the commit of the tagged
-# release on github.com/actions/checkout and github.com/actions/setup-python.
+# Never add `set -x` here (D28). Actions are pinned by commit SHA (verified
+# with `git ls-remote` in the Phase 2 review); Dependabot proposes updates.
 name: collect
 
 on:
@@ -26,14 +21,15 @@ concurrency:
 
 jobs:
   collect:
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (TODO(4c) verify SHA)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 (TODO(4c) verify SHA)
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
@@ -89,13 +85,19 @@ jobs:
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
             push --force "https://github.com/$REPO.git" data:data
 
-      - name: Monthly activity commit on main (60-day schedule pause, D30)
+      # Keepalive against the 60-day schedule pause (D30): on KST days 1-3,
+      # if main has no commit yet this month, record the last success. The
+      # data branch is already published, so a rejected push only warns.
+      - name: Monthly activity commit on main
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          if [ "$(TZ=Asia/Seoul date +%d)" != "01" ]; then
-            echo "Not the 1st in KST; nothing to record."
+          day=$(TZ=Asia/Seoul date +%d)
+          month=$(TZ=Asia/Seoul date +%Y-%m)
+          last=$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m)
+          if [ $((10#$day)) -gt 3 ] || [ "$last" = "$month" ]; then
+            echo "Keepalive not needed (KST day $day, last main commit $last)."
             exit 0
           fi
           auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
@@ -105,5 +107,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add status/last_run.md
           git commit -q -m "chore: record last successful collection" || exit 0
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
-            push "https://github.com/$REPO.git" HEAD:main
+          if ! git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "https://github.com/$REPO.git" HEAD:main; then
+            echo "::warning::Keepalive push to main was rejected; the data branch is published. Retried on the next run (KST day 1-3)."
+          fi
