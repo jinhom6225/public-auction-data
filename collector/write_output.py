@@ -5,6 +5,8 @@
     v1/items/<sido>.json     {"schemaVersion", "generatedAt", "sido", "items"}
     cache/seen.json          D16 history
     cache/budget.json        D17 call counts
+    cache/rtms/<api>/<lawd>/<yyyymm>.json, cache/backfill_state.json
+                             Phase 3 real-transaction cache (passed in by collect.py)
 JSON is compact, keys sorted, items sorted by `key`, final newline. All
 16 provinces are listed (an empty one has count 0), so the app always
 finds an entry for every condition province. `commit` writes the files
@@ -53,7 +55,8 @@ def _capped(path: str, data: bytes, cap: int) -> bytes:
 
 
 def render(records: Iterable[Mapping], generated_at: str, index: RegionIndex,
-           seen: Mapping[str, Mapping], budget: Budget) -> dict[str, bytes]:
+           seen: Mapping[str, Mapping], budget: Budget,
+           extra: Mapping[str, bytes] | None = None) -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     regions = []
     for sido, items in _by_province(records, index).items():
@@ -68,6 +71,10 @@ def render(records: Iterable[Mapping], generated_at: str, index: RegionIndex,
     files["v1/index.json"] = _capped("index.json", dumps(index_doc), MAX_INDEX_BYTES)
     files["cache/seen.json"] = dumps(seen_history.render(seen))
     files["cache/budget.json"] = dumps(budget.to_json())
+    for path, data in (extra or {}).items():
+        if not path.startswith("cache/") or path in files:
+            raise ValueError("extra output files must be new files under cache/")
+        files[path] = data
     return files
 
 

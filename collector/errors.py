@@ -51,3 +51,7 @@ class ValidationFailed(CollectError):
     """Output that must not be published (D29 2-4, D13)."""
 
     exit_code = EXIT_INVALID
+
+
+class RtmsFailed(CollectError):
+    """D29 ②: too many real-transaction months failed in one run."""

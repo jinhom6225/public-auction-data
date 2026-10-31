@@ -120,3 +120,47 @@ class DocumentRulesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DEAL = {"ym": "2026-09", "m2": 84.75, "floor": 12, "amount": 306500000}
+SAME_BUILDING = {"kind": "sameBuilding", "months": 12, "n": 3, "medianPerM2": 3616000, "estimate": 307000000,
+                 "ratio": 65, "deals": [DEAL, {**DEAL, "floor": None}, {**DEAL, "floor": -1}]}
+SAME_DONG = {"kind": "sameDong", "months": 12, "n": 1, "medianPerM2": 3616000, "deals": [DEAL]}
+
+
+class CompareRulesTest(unittest.TestCase):
+    """Phase 3: exact `compare` shapes; the app (Phase 4) applies the same rules."""
+
+    def problems(self, compare):
+        return validate.record_problems(good(compare=compare), "11", INDEX)
+
+    def test_good_shapes(self):
+        for compare in ({"kind": "none"}, SAME_BUILDING, {**SAME_BUILDING, "ratio": None}, SAME_DONG):
+            self.assertEqual(self.problems(compare), [], compare)
+
+    def test_bad_shapes(self):
+        bad = [
+            {"kind": "none", "n": 0},
+            {**SAME_BUILDING, "extra": 1},
+            {k: v for k, v in SAME_BUILDING.items() if k != "estimate"},
+            {**SAME_DONG, "ratio": 50},
+            {**SAME_BUILDING, "ratio": -1}, {**SAME_BUILDING, "ratio": 100001}, {**SAME_BUILDING, "ratio": 6.5},
+            {**SAME_BUILDING, "estimate": 0}, {**SAME_BUILDING, "medianPerM2": 0}, {**SAME_BUILDING, "n": 0},
+            {**SAME_BUILDING, "n": True}, {**SAME_BUILDING, "months": 0}, {**SAME_BUILDING, "months": 25},
+            {**SAME_BUILDING, "n": 2, "deals": [DEAL] * 3},
+            {**SAME_DONG, "deals": []},
+            {**SAME_DONG, "n": 11, "deals": [DEAL] * 11},
+            {**SAME_DONG, "deals": [{**DEAL, "ym": "2026-9"}]},
+            {**SAME_DONG, "deals": [{**DEAL, "ym": "2026-13"}]},
+            {**SAME_DONG, "deals": [{**DEAL, "m2": 0}]},
+            {**SAME_DONG, "deals": [{**DEAL, "floor": 1.5}]},
+            {**SAME_DONG, "deals": [{**DEAL, "amount": 0}]},
+            {**SAME_DONG, "deals": [{**DEAL, "jibun": "1-1"}]},
+            {**SAME_DONG, "deals": [{k: v for k, v in DEAL.items() if k != "floor"}]},
+            "none",
+        ]
+        for compare in bad:
+            self.assertIn("invalid compare", self.problems(compare), compare)
+
+    def test_same_building_may_list_fewer_deals_than_n(self):
+        self.assertEqual(self.problems({**SAME_BUILDING, "n": 25}), [])

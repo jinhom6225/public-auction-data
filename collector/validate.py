@@ -26,6 +26,15 @@ MAX_FAIL_COUNT = 999   # D13 said 99; one real item has 108 failed rounds.
 MAX_DEALS = 10
 MAX_NEXT_ROUNDS = 3
 COMPARE_KINDS = ("sameBuilding", "sameDong", "none")
+COMPARE_FIELDS = {
+    "none": ("kind",),
+    "sameDong": ("kind", "months", "n", "medianPerM2", "deals"),
+    "sameBuilding": ("kind", "months", "n", "medianPerM2", "estimate", "ratio", "deals"),
+}
+DEAL_FIELDS = ("ym", "m2", "floor", "amount")
+MAX_MONTHS = 24
+MAX_FLOOR = 999
+YEAR_MONTH = re.compile(r"[0-9]{4}-(0[1-9]|1[0-2])")
 FIELDS = (
     "key", "round", "name", "pnu", "sgg", "umd", "emdName", "usage", "assetType", "landM2", "bldgM2",
     "share", "appraisal", "lowestBid", "lowestBidText", "ratioToAppraisal", "failCount", "bidStart",
@@ -103,13 +112,35 @@ def _usage_ok(usage: object) -> bool:
     return usage["group"] in GROUPS and all(_text_ok(usage[k], USAGE_TEXT_LIMIT) for k in ("l", "m", "s"))
 
 
+def _deal_ok(deal: object) -> bool:
+    if not isinstance(deal, dict) or set(deal) != set(DEAL_FIELDS):
+        return False
+    return (isinstance(deal["ym"], str) and bool(YEAR_MONTH.fullmatch(deal["ym"]))
+            and _num(deal["m2"]) and 0 < deal["m2"] <= MAX_AREA
+            and _optional(deal["floor"], lambda v: _int(v) and -MAX_FLOOR <= v <= MAX_FLOOR)
+            and _int(deal["amount"]) and 0 < deal["amount"] <= MAX_AMOUNT)
+
+
 def _compare_ok(compare: object) -> bool:
+    """Phase 3 shapes (research §3.3): exact keys per kind, deals 1..10."""
     if not isinstance(compare, dict) or compare.get("kind") not in COMPARE_KINDS:
         return False
-    if compare["kind"] == "none":
-        return compare == {"kind": "none"}
-    deals = compare.get("deals", [])
-    return isinstance(deals, list) and len(deals) <= MAX_DEALS
+    kind = compare["kind"]
+    if set(compare) != set(COMPARE_FIELDS[kind]):
+        return False
+    if kind == "none":
+        return True
+    deals, n = compare["deals"], compare["n"]
+    amount = lambda v: _int(v) and 0 < v <= MAX_AMOUNT  # noqa: E731
+    if not (isinstance(deals, list) and 1 <= len(deals) <= MAX_DEALS and all(_deal_ok(d) for d in deals)):
+        return False
+    if not (_int(compare["months"]) and 1 <= compare["months"] <= MAX_MONTHS and _int(n)
+            and amount(compare["medianPerM2"])):
+        return False
+    if kind == "sameDong":
+        return n == len(deals)
+    return (n >= len(deals) and amount(compare["estimate"])
+            and _optional(compare["ratio"], lambda v: _int(v) and 0 <= v <= MAX_RATIO))
 
 
 def _next_rounds_ok(rounds: object) -> bool:

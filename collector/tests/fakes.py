@@ -98,3 +98,43 @@ def item_record(key: str = "2025-09941-003", sgg: str = "11110", **overrides) ->
         "compare": {"kind": "none"}, "nextRounds": [],
     }
     return {**record, **overrides}
+
+
+def rtms_item(**fields) -> dict:
+    """One MOLIT <item> with the fields of every API (strings, like the XML)."""
+    row = {
+        "sggCd": "11500", "umdNm": "화곡동", "jibun": "645-32", "dealYear": "2026", "dealMonth": "9",
+        "dealDay": "1", "dealAmount": "22,000", "cdealType": " ", "cdealDay": " ", "floor": "6",
+        "excluUseAr": "28.02", "dealArea": "100", "totalFloorAr": "108.37", "plottageAr": "113",
+        "buildingAr": "59.21", "buildingUse": "제2종근린생활", "jimok": "전", "shareDealingType": " ",
+    }
+    return {**row, **fields}
+
+
+def rtms_body(rows: list[dict], total: int | None = None, page: int = 1) -> bytes:
+    """A successful MOLIT XML page."""
+    from xml.sax.saxutils import escape
+    items = "".join("<item>" + "".join(f"<{k}>{escape(str(v))}</{k}>" for k, v in row.items()) + "</item>"
+                    for row in rows)
+    text = ('<?xml version="1.0" encoding="utf-8" standalone="yes"?><response><header><resultCode>000'
+            '</resultCode><resultMsg>OK</resultMsg></header><body><items>' + items + '</items><numOfRows>1000'
+            f'</numOfRows><pageNo>{page}</pageNo><totalCount>{len(rows) if total is None else total}'
+            '</totalCount></body></response>')
+    return text.encode("utf-8")
+
+
+RTMS_PREFIX = "https://apis.data.go.kr/1613000/"
+
+
+def is_rtms(url: str) -> bool:
+    return url.startswith(RTMS_PREFIX)
+
+
+def with_rtms(handler: Callable[[str, int], Response],
+              rtms: Callable[[str, int], Response] | None = None) -> Callable[[str, int], Response]:
+    """Routes MOLIT URLs to [rtms] (default: an empty month) and the rest to [handler]."""
+    def route(url: str, i: int) -> Response:
+        if is_rtms(url):
+            return rtms(url, i) if rtms else ok(rtms_body([]))
+        return handler(url, i)
+    return route

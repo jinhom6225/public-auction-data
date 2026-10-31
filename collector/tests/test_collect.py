@@ -7,9 +7,10 @@ import unittest
 from unittest import mock
 
 import netguard  # noqa: F401  (blocks the network)
-from fakes import FAKE_KEY, RecordingTransport, ok, page_body, page_no_of, raw_row
+from fakes import FAKE_KEY, RecordingTransport, is_rtms, ok, page_body, page_no_of, raw_row, rtms_body, rtms_item
+from fakes import with_rtms
 
-from collector import collect, write_output
+from collector import collect, rtms_cache, rtms_client, write_output
 from collector.http_client import Response
 
 NOW = "2026-11-01T20:10:00Z"          # 2026-11-02 05:10 KST
@@ -28,14 +29,22 @@ def busan_rows(count, start=0):
                     cltrBidEndDt="202611111700") for i in range(start, start + count)]
 
 
-def paged(rows, page_size=1000, fail_page=None):
+def paged(rows, page_size=1000, fail_page=None, rtms=None):
     def handler(url, i):
         page = page_no_of(url)
         if page == fail_page:
             return Response(status=500, body=b"")
         chunk = rows[(page - 1) * page_size: page * page_size]
         return ok(page_body(chunk, len(rows), page, page_size))
-    return RecordingTransport(handler)
+    return RecordingTransport(with_rtms(handler, rtms))
+
+
+def same_building_deals(url, i):
+    """Three deals in the building of raw_row() (청운동 12-3) every month."""
+    deals = [rtms_item(sggCd="11110", umdCd="10100", umdNm="청운동", bonbun="0012", bubun="0003",
+                       jibun="12-3", excluUseAr="84.9", dealAmount=f"{90000 + 1000 * k:,}", dealDay=str(k + 1))
+             for k in range(3)]
+    return ok(rtms_body(deals))
 
 
 def snapshot(folder):
@@ -46,6 +55,22 @@ def snapshot(folder):
             with open(path, "rb") as handle:
                 found[os.path.relpath(path, folder)] = handle.read()
     return found
+
+
+RTMS_DIR = os.path.join("cache", "rtms")
+
+
+def pinned(snap):
+    """Golden view of a run: every file but cache/rtms/, plus the rtms manifest."""
+    view = {path: data for path, data in snap.items() if not path.startswith(RTMS_DIR + os.sep)}
+    rtms = {path.replace(os.sep, "/"): data for path, data in snap.items() if path.startswith(RTMS_DIR + os.sep)}
+    return view, rtms_cache.manifest(rtms)
+
+
+def golden(*parts):
+    snap = snapshot(netguard.fixture_path(*parts))
+    manifest = json.loads(snap.pop("rtms_manifest.json"))
+    return snap, manifest
 
 
 class CollectCase(unittest.TestCase):
@@ -89,7 +114,7 @@ class SuccessTest(CollectCase):
             self.assertEqual((item["firstSeen"], item["priceDropAt"]), ("2026-11-02", None))
             self.assertEqual(item["compare"], {"kind": "none"})
         budget = json.loads(files[os.path.join("cache", "budget.json")])
-        self.assertEqual(budget, {"date": "2026-11-02", "used": {"onbid": 1}})
+        self.assertEqual(budget, {"date": "2026-11-02", "used": {"apt": 12, "onbid": 1}})   # 1 pair x 12 months
         self.assertIn("items=3", out)
 
     def test_second_day_marks_new_items_and_price_drops(self):
@@ -118,7 +143,7 @@ class SuccessTest(CollectCase):
         code, _, err = self.run_collect(None, "--first-run", "--offline-fixtures", fixtures, env={},
                                         now="2026-10-31T20:10:00Z")
         self.assertEqual(code, 0, err)
-        self.assertEqual(snapshot(self.out), snapshot(netguard.fixture_path("golden")))
+        self.assertEqual(pinned(snapshot(self.out)), golden("golden"))
 
     def test_boundary_fixture_two_days_match_the_golden_copies(self):
         """M6: hand-made edge cases; the app's items_sample/boundary_day2 copies day 2."""
@@ -126,13 +151,13 @@ class SuccessTest(CollectCase):
         code, _, err = self.run_collect(None, "--first-run", "--offline-fixtures", os.path.join(base, "day1"),
                                         env={}, now="2026-10-31T20:10:00Z")
         self.assertEqual(code, 0, err)
-        self.assertEqual(snapshot(self.out), snapshot(netguard.fixture_path("golden_boundary", "day1")))
+        self.assertEqual(pinned(snapshot(self.out)), golden("golden_boundary", "day1"))
         os.rename(self.out, self.prev)
         code, _, err = self.run_collect(None, "--prev", self.prev, "--offline-fixtures",
                                         os.path.join(base, "day2"), env={}, now="2026-11-01T20:10:00Z")
         self.assertEqual(code, 0, err)
         day2 = snapshot(self.out)
-        self.assertEqual(day2, snapshot(netguard.fixture_path("golden_boundary", "day2")))
+        self.assertEqual(pinned(day2), golden("golden_boundary", "day2"))
         items = {i["key"]: i for i in json.loads(day2[os.path.join("v1", "items", "11.json")])["items"]}
         self.assertEqual(len(items["B-NAME-602"]["name"]), 602)
         self.assertNotIn("B-NAME-603", items)
@@ -263,6 +288,128 @@ class FailureRulesTest(CollectCase):
             code, _, err = self.run_collect(paged(rows_for(2)), "--first-run")
         self.assert_untouched(before, code, 2)
         self.assertIn("seen.json", err)
+
+
+class FixtureTransportTest(unittest.TestCase):
+    def test_molit_urls_map_to_fixture_files_and_missing_months_are_empty(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with open(os.path.join(folder, "rtms_rh_11500_202609.xml"), "wb") as handle:
+                handle.write(rtms_body([rtms_item()]))
+            transport = collect.fixture_transport(folder)
+            base = "https://apis.data.go.kr/1613000/RTMSDataSvcRHTrade2/getRTMSDataSvcRHTrade2?serviceKey=x&"
+            found = transport(base + "LAWD_CD=11500&DEAL_YMD=202609&pageNo=1", 1, 10**6)
+            self.assertIn(b"<totalCount>1<", found.body)
+            missing = transport(base + "LAWD_CD=11500&DEAL_YMD=202608&pageNo=1", 1, 10**6)
+            self.assertEqual(missing.body, rtms_client.empty_body())
+            odd = transport(base + "LAWD_CD=../../x&DEAL_YMD=202608&pageNo=1", 1, 10**6)
+            self.assertEqual(odd.body, rtms_client.empty_body())
+        self.assertEqual(collect._rtms_fixture_name(base + "LAWD_CD=11500&DEAL_YMD=202609&pageNo=2"),
+                         "rtms_rh_11500_202609_p2.xml")
+        self.assertIsNone(collect._rtms_fixture_name("https://apis.data.go.kr/B010003/x?pageNo=1"))
+
+
+class RealTransactionStageTest(CollectCase):
+    """Phase 3 wiring: cache on the data branch, refresh vs backfill, failure rule."""
+
+    def items(self):
+        return {i["key"]: i for i in json.loads(snapshot(self.out)[os.path.join("v1", "items", "11.json")])["items"]}
+
+    def rtms_files(self, folder):
+        return {path: data for path, data in snapshot(folder).items() if path.startswith(os.path.join("cache", "rtms"))}
+
+    def test_first_run_fills_compare_and_the_cache(self):
+        code, out, err = self.run_collect(paged(rows_for(1), rtms=same_building_deals), "--first-run")
+        self.assertEqual(code, 0, err)
+        compare = self.items()["2025-00000-000"]["compare"]
+        self.assertEqual((compare["kind"], compare["n"], len(compare["deals"])), ("sameBuilding", 36, 10))
+        self.assertEqual((compare["estimate"], compare["ratio"]), (910000000, 73))   # 665,000,000 / 910,000,000
+        files = self.rtms_files(self.out)
+        self.assertEqual(len(files), 12)
+        self.assertIn(os.path.join("cache", "rtms", "apt", "11110", "202611.json"), files)
+        state = json.loads(snapshot(self.out)[os.path.join("cache", "backfill_state.json")])
+        self.assertEqual(state["apis"]["apt"]["cached"], 12)
+        self.assertIn("rtms apt: pairs=1 cached=12/12 fetched=12", out)
+
+    def test_v1_carries_no_raw_molit_fields(self):
+        self.run_collect(paged(rows_for(2), rtms=same_building_deals), "--first-run")
+        v1 = b"".join(data for path, data in snapshot(self.out).items() if path.startswith("v1"))
+        for field in (b"dealAmount", b"umdNm", b"jibun", b"excluUseAr", b"cdealType", b"aptNm", b'"k":'):
+            self.assertNotIn(field, v1)
+
+    def test_next_day_refreshes_two_months_and_carries_the_rest(self):
+        self.first_run_into_prev_with(same_building_deals)
+        transport = paged(rows_for(1), rtms=same_building_deals)
+        code, _, err = self.run_collect(transport, "--prev", self.prev, now=NEXT_DAY)
+        self.assertEqual(code, 0, err)
+        months = sorted(url.split("DEAL_YMD=")[1][:6] for url in transport.urls if is_rtms(url))
+        self.assertEqual(months, ["202610", "202611"])
+        before, after = self.rtms_files(self.prev), self.rtms_files(self.out)
+        changed = sorted(path for path in after if after[path] != before.get(path))
+        self.assertEqual([os.path.basename(path) for path in changed], ["202610.json", "202611.json"])
+        budget = json.loads(snapshot(self.out)[os.path.join("cache", "budget.json")])
+        self.assertEqual(budget["used"]["apt"], 2)
+
+    def test_month_rollover_drops_the_thirteenth_month(self):
+        self.first_run_into_prev_with(same_building_deals)          # window 202512 ... 202611
+        december = [{**row, "cltrBidBgngDt": "202612091000", "cltrBidEndDt": "202612111700"} for row in rows_for(1)]
+        code, _, err = self.run_collect(paged(december, rtms=same_building_deals), "--prev", self.prev,
+                                        now="2026-11-30T16:00:00Z")   # 2026-12-01 KST
+        self.assertEqual(code, 0, err)
+        names = sorted(os.path.basename(path) for path in self.rtms_files(self.out))
+        self.assertEqual((names[0], names[-1], len(names)), ("202601.json", "202612.json", 12))
+
+    def test_failed_month_keeps_yesterday_and_small_failure_rate_passes(self):
+        self.first_run_into_prev_with(same_building_deals)
+        rows = rows_for(1) + [raw_row(key=f"2025-11140-{i:03d}", lctnSggnm="중구", lctnEmdNm="무교동",
+                                      ltnoPnu=None, onbidCltrNm="서울특별시 중구 무교동 1",
+                                      cltrBidEndDt="202611111700") for i in range(1)]
+
+        def flaky(url, i):
+            if "LAWD_CD=11110" in url and "DEAL_YMD=202611" in url:
+                return Response(status=500, body=b"")
+            return same_building_deals(url, i) if "LAWD_CD=11110" in url else ok(rtms_body([]))
+        code, out, err = self.run_collect(paged(rows, rtms=flaky), "--prev", self.prev, now=NEXT_DAY)
+        self.assertEqual(code, 0, err)                                  # 1 of 14 months = 7%
+        key = os.path.join("cache", "rtms", "apt", "11110", "202611.json")
+        self.assertEqual(self.rtms_files(self.out)[key], self.rtms_files(self.prev)[key])
+        self.assertIn("failed=1", out)
+
+    def test_more_than_10_percent_failed_months_exits_1_and_writes_nothing(self):
+        before = self.seed_out()
+        failing = lambda url, i: Response(status=500, body=b"")   # noqa: E731
+        code, _, err = self.run_collect(paged(rows_for(1), rtms=failing), "--first-run")
+        self.assertEqual(code, 1)
+        self.assertEqual(snapshot(self.out), before)
+        self.assertIn("real-transaction months failed: 12 of 12", err)
+
+    def test_backfill_stops_at_the_deadline_but_refresh_runs(self):
+        readings = iter([0.0])                     # deadline = 0 + 40 min; every later reading is past it
+
+        def run(argv):
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = collect.main(argv, env=ENV, transport=paged(rows_for(1), rtms=same_building_deals),
+                                    sleep=lambda seconds: None, clock=lambda: next(readings, 10.0**6))
+            return code
+        self.assertEqual(run(["collect", "--out", self.out, "--now", NOW, "--first-run"]), 0)
+        names = sorted(os.path.basename(path) for path in self.rtms_files(self.out))
+        self.assertEqual(names, ["202610.json", "202611.json"])
+        state = json.loads(snapshot(self.out)[os.path.join("cache", "backfill_state.json")])
+        self.assertEqual(state["apis"]["apt"]["deferred"], 10)
+
+    def test_missing_rtms_cache_in_prev_is_a_full_backfill(self):
+        self.first_run_into_prev(rows_for(1))
+        import shutil
+        shutil.rmtree(os.path.join(self.prev, "cache", "rtms"))
+        transport = paged(rows_for(1))
+        code, _, err = self.run_collect(transport, "--prev", self.prev, now=NEXT_DAY)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sum(1 for url in transport.urls if is_rtms(url)), 12)
+
+    def first_run_into_prev_with(self, rtms):
+        code, _, err = self.run_collect(paged(rows_for(1), rtms=rtms), "--first-run")
+        self.assertEqual(code, 0, err)
+        os.rename(self.out, self.prev)
 
 
 if __name__ == "__main__":
