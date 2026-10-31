@@ -82,8 +82,12 @@ back are never fetched again (late cancellations are accepted). The seven
 APIs run side by side (one thread and client each, 4 tps each, 28 tps in
 total under the 30 tps limit); a page is retried once after 2 seconds.
 A failed month keeps yesterday's file; more than 10% failed months fails
-the run (exit 1). Gateway code 22 (provider's daily limit) stops that API
-for the day without counting as a failure. Bodies must be strict UTF-8
+the run (exit 1). Gateway code 22 (provider's daily limit — the expected
+code per data.go.kr, not yet observed) stops that API for the day without
+counting as a failure; if the gateway answers differently, those months
+count as failed and the run may exit 1 (data branch untouched). A pair
+(API, sgg) with no item today drops its cached months; they are fetched
+again when items come back. Bodies must be strict UTF-8
 (no BOM, no other `encoding=`), no DOCTYPE/ENTITY, at most 2MB.
 
 ## Secrets (plan D28)
