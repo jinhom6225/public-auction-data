@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import urllib.parse
 from typing import Callable
 
@@ -31,15 +32,18 @@ def page_no_of(url: str) -> int:
 
 
 class RecordingTransport:
-    """Answers with [handler(url, call_index)] and records every URL."""
+    """Answers with [handler(url, call_index)] and records every URL (thread-safe: API threads share it)."""
 
     def __init__(self, handler: Callable[[str, int], Response]):
         self.handler = handler
         self.urls: list[str] = []
+        self._lock = threading.Lock()
 
     def __call__(self, url: str, timeout: float, max_bytes: int) -> Response:
-        self.urls.append(url)
-        return self.handler(url, len(self.urls) - 1)
+        with self._lock:
+            self.urls.append(url)
+            index = len(self.urls) - 1
+        return self.handler(url, index)
 
 
 def ok(body: bytes) -> Response:

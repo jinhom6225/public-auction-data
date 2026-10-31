@@ -1,4 +1,5 @@
 import datetime
+import threading
 import unittest
 from types import SimpleNamespace
 
@@ -41,8 +42,10 @@ class FakeFetch:
         return MonthResult("ok", (ROW,), spent)
 
 
-def run(tasks, fetch, cache=None, spent=None, clock=lambda: 0.0, deadline=1800, today=TODAY.isoformat()):
-    return backfill.run(tasks, lambda api: fetch, cache or {}, spent or budget(), today, clock, deadline)
+def run(tasks, fetch, cache=None, spent=None, clock=lambda: 0.0, deadline=1800, today=TODAY.isoformat(),
+        stage=3000, cancel=None, fetch_for=None):
+    return backfill.run(tasks, fetch_for or (lambda api: fetch), cache or {}, spent or budget(), today, clock,
+                        backfill.Deadlines(deadline, stage), cancel)
 
 
 class PairsAndPlanTest(unittest.TestCase):
@@ -125,7 +128,9 @@ class RunTest(unittest.TestCase):
         one = run(tasks, FakeFetch(fail={("apt", "12210", "202611")}))
         self.assertIsNone(backfill.failure_problem(one))                 # 1/12 = 8.3%
         two = run(tasks, FakeFetch(fail={("apt", "12210", "202611"), ("apt", "12210", "202610")}))
-        self.assertIn("2 of 12", backfill.failure_problem(two))          # 16.7%
+        # two failures pass the failure budget (10% of 12 planned): the API stops early and the run fails
+        self.assertIn("apt: 2 of 2", backfill.failure_problem(two))
+        self.assertEqual(two.stats["apt"].deferred, 10)
 
     def test_exactly_10_percent_passes(self):
         pairs = {("apt", "12210"): 2, ("rh", "12210"): 1}
@@ -143,22 +148,107 @@ class RunTest(unittest.TestCase):
         self.assertIsNone(backfill.failure_problem(outcome))
 
     def test_deadline_stops_backfill_but_not_refresh(self):
-        ticks = iter(range(1000, 100_000, 1000))
-        tasks = backfill.plan({("apt", "12210"): 1, ("rh", "11500"): 1}, WINDOW, set())
-        outcome = run(tasks, FakeFetch(), clock=lambda: next(ticks), deadline=2500)
-        # clock: 1000, 2000, 3000 ... per backfill check -> two backfill months before the deadline
-        self.assertEqual(sum(1 for slot in outcome.cache if slot[2] in WINDOW[:2]), 4)
-        self.assertEqual(len(outcome.cache), 6)
-        self.assertEqual(outcome.stats["apt"].deferred + outcome.stats["rh"].deferred, 18)
+        ticks = iter(range(1000, 100_000, 1000))     # one clock reading per task: 1000, 2000, ...
+        tasks = backfill.plan({("apt", "12210"): 1}, WINDOW, set())
+        outcome = run(tasks, FakeFetch(), clock=lambda: next(ticks), deadline=3500, stage=10**9)
+        # refresh at 1000 and 2000, one backfill month at 3000, the rest after the backfill deadline
+        self.assertEqual(sorted(slot[2] for slot in outcome.cache), ["202609", "202610", "202611"])
+        self.assertEqual(outcome.stats["apt"].deferred, 9)
+
+    def test_stage_deadline_defers_refresh_too_and_keeps_yesterday(self):
+        old = Month("apt", "12210", "202611", "2026-11-01", (ROW,))
+        tasks = backfill.plan({("apt", "12210"): 1}, WINDOW, {old.slot})
+        fetch = FakeFetch()
+        outcome = run(tasks, fetch, cache={old.slot: old}, clock=lambda: 5000.0)   # past both deadlines
+        self.assertEqual(fetch.calls, [])
+        self.assertEqual(outcome.cache, {old.slot: old})
+        self.assertEqual((outcome.stats["apt"].deferred, outcome.stats["apt"].failed), (12, 0))
+        self.assertIsNone(backfill.failure_problem(outcome))
+
+    def test_failure_budget_cancels_every_api(self):
+        cancel = threading.Event()
+        apt_calls = []
+
+        def fetch_for(api):
+            if api == "rh":
+                return FakeFetch(fail={("rh", "11500", ym) for ym in WINDOW})
+            def waiting(task, spent):                       # holds until the cancel event is set
+                cancel.wait(5)
+                apt_calls.append(task)
+                return MonthResult("ok", (ROW,), spent.spend("apt"))
+            return waiting
+        tasks = backfill.plan({("apt", "12210"): 2, ("rh", "11500"): 1}, WINDOW, set())   # 24 planned -> budget 2.4
+        outcome = run(tasks, None, fetch_for=fetch_for, cancel=cancel)
+        self.assertTrue(cancel.is_set())
+        self.assertEqual(outcome.stats["rh"].failed, 3)                       # stopped at the third failure
+        self.assertEqual(len(apt_calls), 1)                                    # the other thread stops too
+        self.assertIn("rh", backfill.failure_problem(outcome))
+
+    def test_exception_in_one_api_stops_the_others_and_is_raised(self):
+        cancel = threading.Event()
+        apt_calls = []
+
+        def fetch_for(api):
+            if api == "rh":
+                def broken(task, spent):
+                    raise RuntimeError("bug")
+                return broken
+            def waiting(task, spent):
+                cancel.wait(5)
+                apt_calls.append(task)
+                return MonthResult("ok", (ROW,), spent.spend("apt"))
+            return waiting
+        tasks = backfill.plan({("apt", "12210"): 2, ("rh", "11500"): 1}, WINDOW, set())
+        with self.assertRaises(RuntimeError):
+            run(tasks, None, fetch_for=fetch_for, cancel=cancel)
+        self.assertEqual(len(apt_calls), 1)
+
+    def test_auth_error_stops_the_api_and_counts_as_failed(self):
+        class Auth(FakeFetch):
+            def __call__(self, task, spent):
+                self.calls.append(task)
+                return MonthResult("auth", (), spent.spend(task.api), "x failed: HTTP 403, resultCode 30")
+        tasks = backfill.plan({("rh", "11500"): 1, ("apt", "12210"): 9}, WINDOW, set())
+        fetch_for = lambda api: Auth() if api == "rh" else FakeFetch()      # noqa: E731
+        outcome = run(tasks, None, fetch_for=fetch_for)
+        self.assertEqual((outcome.stats["rh"].failed, outcome.stats["rh"].blocked), (1, "auth"))
+        self.assertIn("rh: 1 of 1", backfill.failure_problem(outcome))         # 1 of 13 overall, but all of rh
+
+    def test_more_than_half_of_one_api_failing_fails_the_run(self):
+        stats = {api: backfill.ApiStats() for api in backfill.RTMS_APIS}
+        ok = backfill.Outcome({}, budget(), {**stats, "apt": backfill.ApiStats(fetched=100),
+                                              "rh": backfill.ApiStats(fetched=1, failed=1)}, ())
+        self.assertIsNone(backfill.failure_problem(ok))                        # 1 of 2 = half
+        bad = backfill.Outcome({}, budget(), {**stats, "apt": backfill.ApiStats(fetched=100),
+                                               "rh": backfill.ApiStats(fetched=1, failed=2)}, ())
+        self.assertIn("rh: 2 of 3", backfill.failure_problem(bad))
 
     def test_state_document(self):
         tasks = backfill.plan({("apt", "12210"): 1}, WINDOW, set())
         outcome = run(tasks, FakeFetch(fail={("apt", "12210", "202512")}))
-        state = backfill.state(outcome, {("apt", "12210"): 1}, WINDOW, TODAY.isoformat())
+        state = backfill.state(outcome, {("apt", "12210"): 1}, WINDOW, TODAY.isoformat(),
+                               {("apt", "12210"): "2026-11-02", ("rh", "11500"): "2026-10-25"})
         self.assertEqual(state["window"], list(WINDOW))
         self.assertEqual(state["apis"]["apt"], {"pairs": 1, "months": 12, "cached": 11, "fetched": 11,
                                                 "failed": 1, "deferred": 0, "blocked": None})
         self.assertEqual(state["apis"]["land"]["pairs"], 0)
+        self.assertEqual(state["pairsLastSeen"], {"apt/12210": "2026-11-02", "rh/11500": "2026-10-25"})
+
+
+class RetentionTest(unittest.TestCase):
+    """Review MEDIUM-3: a pair keeps its months for 14 days after its last item."""
+
+    def test_today_pairs_are_seen_today_and_gone_pairs_keep_their_date_for_14_days(self):
+        previous = {"pairsLastSeen": {"apt/12210": "2026-10-19", "rh/11500": "2026-10-18", "land/41461": "2026-11-01"}}
+        seen = backfill.last_seen(previous, {("offi", "11500"): 1, ("land", "41461"): 2}, TODAY)
+        self.assertEqual(seen, {("apt", "12210"): "2026-10-19",          # 14 days ago: kept
+                                ("land", "41461"): "2026-11-02", ("offi", "11500"): "2026-11-02"})
+
+    def test_unreadable_previous_state_is_ignored(self):
+        for previous in (None, [], {"pairsLastSeen": []}, {"pairsLastSeen": {"x": "2026-11-01"}},
+                         {"pairsLastSeen": {"apt/12210": "yesterday"}}, {"pairsLastSeen": {"car/12210": "2026-11-01"}},
+                         {"pairsLastSeen": {"apt/12210": "2026-12-01"}}):
+            self.assertEqual(backfill.last_seen(previous, {}, TODAY), {}, previous)
 
 
 if __name__ == "__main__":

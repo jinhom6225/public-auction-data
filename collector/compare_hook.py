@@ -19,7 +19,7 @@ from typing import Callable, Iterable, Mapping
 
 from collector import backfill, compare, rtms_cache, rtms_client
 from collector.budget import Budget
-from collector.config import RTMS_APIS, RTMS_BACKFILL_SECONDS
+from collector.config import RTMS_APIS, RTMS_BACKFILL_SECONDS, RTMS_STAGE_SECONDS
 from collector.errors import RtmsFailed
 from collector.http_client import ApiClient
 from collector.region_index import RegionIndex
@@ -56,21 +56,25 @@ def _fetcher(client: ApiClient, regions: RegionIndex) -> backfill.Fetch:
 
 def refresh(new_client: Callable[[], ApiClient], items: Iterable, previous: rtms_cache.Cache, budget: Budget,
             today: datetime.date, regions: RegionIndex, clock: Callable[[], float],
-            deadline: float | None = None, params: compare.Params | None = None) -> RtmsRun:
-    """[deadline]: clock value after which backfill (not refresh) stops; default now + RTMS_BACKFILL_SECONDS."""
+            deadlines: backfill.Deadlines | None = None, params: compare.Params | None = None,
+            previous_state: object = None) -> RtmsRun:
+    """[deadlines]: clock values (default: now + RTMS_BACKFILL_SECONDS / RTMS_STAGE_SECONDS)."""
     params = params or compare.Params.load()
-    deadline = clock() + RTMS_BACKFILL_SECONDS if deadline is None else deadline
+    if deadlines is None:
+        start = clock()
+        deadlines = backfill.Deadlines(start + RTMS_BACKFILL_SECONDS, start + RTMS_STAGE_SECONDS)
     months = rtms_cache.window(today, params.months)
     pairs = backfill.pairs_of(items)
+    seen = backfill.last_seen(previous_state, pairs, today)
     active = {slot: entry for slot, entry in rtms_cache.in_window(previous, months).items()
-              if (slot[0], slot[1]) in pairs}
+              if (slot[0], slot[1]) in seen}
     tasks = backfill.plan(pairs, months, set(active), regions.is_selectable)
     outcome = backfill.run(tasks, lambda api: _fetcher(new_client(), regions), active, budget, today.isoformat(),
-                           clock, deadline)
+                           clock, deadlines)
     problem = backfill.failure_problem(outcome)
     if problem:
         raise RtmsFailed(problem + "; first failures: " + " | ".join(outcome.errors[:3]))
-    state = backfill.state(outcome, pairs, months, today.isoformat())
+    state = backfill.state(outcome, pairs, months, today.isoformat(), seen)
     context = CompareContext(compare.deals_index(outcome.cache), params)
     return RtmsRun(context, outcome.budget, outcome.cache, MappingProxyType(state), outcome)
 
@@ -85,6 +89,8 @@ def report(run: RtmsRun) -> list[str]:
                          f"fetched={entry['fetched']} failed={entry['failed']} deferred={entry['deferred']} "
                          f"blocked={entry['blocked'] or '-'} calls={run.budget.used_of(api)}")
     lines += [f"rtms error: {error}" for error in run.outcome.errors[:5]]
+    manifest = rtms_cache.manifest(rtms_cache.render(run.cache))
+    lines.append(f"rtms manifest: files={manifest['files']} rows={manifest['rows']} sha256={manifest['sha256']}")
     return lines
 
 

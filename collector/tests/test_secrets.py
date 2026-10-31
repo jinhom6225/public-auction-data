@@ -58,6 +58,10 @@ RTMS_FAILURES = {
     "rtms not XML": lambda url, i: ok(b"<html>" + url.encode()),
     "rtms DOCTYPE": lambda url, i: ok(rtms_body([]).replace(b"<response>", b"<!DOCTYPE r><response>")),
     "rtms BOM": lambda url, i: ok(b"\xef\xbb\xbf" + rtms_body([])),
+    "rtms UTF-16-LE DOCTYPE": lambda url, i: ok(('<!DOCTYPE r [<!ENTITY a "' + url + '">]><response>&a;</response>')
+                                                .encode("utf-16-le")),
+    "rtms UTF-16-BE DOCTYPE": lambda url, i: ok(('<!DOCTYPE r [<!ENTITY a "' + url + '">]><response>&a;</response>')
+                                                .encode("utf-16-be")),
     "rtms other encoding": lambda url, i: ok(rtms_body([]).replace(b"utf-8", b"euc-kr")),
     "rtms oversized": lambda url, i: ok(rtms_body([]) + b" " * (2 * 1024 * 1024)),
     "rtms short page": lambda url, i: ok(rtms_body([rtms_item()], total=5)),
@@ -104,6 +108,15 @@ class SecretLeakTest(unittest.TestCase):
                     self.assertNotIn(text, out)
                     self.assertNotIn(text, err)
                     self.assertNotIn(text.encode(), files)
+
+    def test_rtms_daily_limit_429_stops_quietly_without_the_key(self):
+        code, out, err, files, _ = self.run_case(with_rtms(_onbid_ok, lambda url, i: Response(429, url.encode())),
+                                                 {"DATA_GO_KR_SERVICE_KEY": FAKE_KEY})
+        self.assertEqual(code, 0)
+        self.assertIn("blocked=quota", out)
+        for text in FORBIDDEN:
+            self.assertNotIn(text, out + err)
+            self.assertNotIn(text.encode(), files)
 
     def test_success_output_has_no_key(self):
         code, out, err, files, transport = self.run_case(with_rtms(_onbid_ok, lambda url, i: ok(rtms_body(

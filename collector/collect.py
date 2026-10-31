@@ -33,10 +33,11 @@ from typing import Callable, Mapping
 
 from collector import compare_hook, key_guard, normalize_item, onbid_list, previous_copy, rtms_cache
 from collector import rtms_client, seen_history, validate, validate_output, write_output
+from collector.backfill import Deadlines
 from collector.budget import Budget
 from collector.config import (
     KEY_ENV, KST, MAX_DAILY_DECREASE, MAX_PROVINCE_DECREASE, ONBID_TPS, PROVINCE_GUARD_MIN,
-    RTMS_BACKFILL_SECONDS, RTMS_TPS,
+    RTMS_BACKFILL_SECONDS, RTMS_STAGE_SECONDS, RTMS_TPS,
 )
 from collector.errors import EXIT_BUG, EXIT_OK, EXIT_USAGE, CollectError, ValidationFailed
 from collector.http_client import ApiClient, Response, Transport, urllib_transport
@@ -195,11 +196,11 @@ def _clients(opts: Options, env: Mapping[str, str], transport: Transport | None,
 
 def _compare(clients: Clients, result: NormalizeResult, previous: previous_copy.Previous, budget: Budget,
              today: datetime.date, context: Context, log: Log, clock: Callable[[], float],
-             deadline: float) -> tuple[list[dict], compare_hook.RtmsRun]:
+             deadlines: Deadlines) -> tuple[list[dict], compare_hook.RtmsRun]:
     if previous.rtms_skipped:
         log.info(f"rtms: skipped {previous.rtms_skipped} unreadable cache file(s); they are fetched again")
     run = compare_hook.refresh(clients.new_rtms, result.items, previous.rtms, budget, today, context.regions, clock,
-                               deadline)
+                               deadlines, previous_state=previous.backfill_state)
     for line in compare_hook.report(run):
         log.info(line)
     records = compare_hook.attach_compare(result.items, run.context)
@@ -209,17 +210,18 @@ def _compare(clients: Clients, result: NormalizeResult, previous: previous_copy.
 
 def _collect(opts: Options, env: Mapping[str, str], transport: Transport | None, log: Log,
              sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> int:
-    deadline = clock() + RTMS_BACKFILL_SECONDS     # backfill stops here; refresh always runs
+    start = clock()   # MOLIT backfill stops 40 min after this, every MOLIT call 50 min after (D30 60 min)
+    deadlines = Deadlines(start + RTMS_BACKFILL_SECONDS, start + RTMS_STAGE_SECONDS)
     clients = _clients(opts, env, transport, sleep, clock)
     today = opts.now.astimezone(KST).date()
-    previous = previous_copy.load(opts.prev) if opts.prev else previous_copy.FIRST_RUN
+    previous = previous_copy.load(opts.prev, today) if opts.prev else previous_copy.FIRST_RUN
     rows, budget = onbid_list.fetch_all(clients.onbid, Budget.load(previous.budget, today.isoformat()))
     log.info(f"onbid: rows={len(rows)} calls={budget.used_of('onbid')}")
     context = Context.load(opts.now.astimezone(KST))
     result = normalize_item.normalize_all(rows, context)
     _report(result, log)
     _check_drops(result)
-    records, run = _compare(clients, result, previous, budget, today, context, log, clock, deadline)
+    records, run = _compare(clients, result, previous, budget, today, context, log, clock, deadlines)
     records, seen = seen_history.apply(records, previous.seen, today)
     _check_decrease(len(records), previous.total)
     _check_provinces(records, previous.counts)

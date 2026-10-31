@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -374,28 +375,56 @@ class RealTransactionStageTest(CollectCase):
         self.assertEqual(self.rtms_files(self.out)[key], self.rtms_files(self.prev)[key])
         self.assertIn("failed=1", out)
 
-    def test_more_than_10_percent_failed_months_exits_1_and_writes_nothing(self):
+    def test_failed_months_exit_1_write_nothing_and_stop_calling_early(self):
         before = self.seed_out()
-        failing = lambda url, i: Response(status=500, body=b"")   # noqa: E731
-        code, _, err = self.run_collect(paged(rows_for(1), rtms=failing), "--first-run")
+        transport = paged(rows_for(1), rtms=lambda url, i: Response(status=500, body=b""))
+        code, _, err = self.run_collect(transport, "--first-run")
         self.assertEqual(code, 1)
         self.assertEqual(snapshot(self.out), before)
-        self.assertIn("real-transaction months failed: 12 of 12", err)
+        self.assertIn("real-transaction months failed — apt: 2 of 2", err)
+        # HIGH-1: two failed months pass the failure budget (10% of 12): no further calls (2 months x 2 tries)
+        self.assertEqual(sum(1 for url in transport.urls if is_rtms(url)), 4)
 
-    def test_backfill_stops_at_the_deadline_but_refresh_runs(self):
-        readings = iter([0.0])                     # deadline = 0 + 40 min; every later reading is past it
+    def run_with_clock(self, later, *args):
+        readings = iter([0.0])                     # collector start; every later reading = [later]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = collect.main(["collect", "--out", self.out, "--now", NOW, *args], env=ENV,
+                                transport=paged(rows_for(1), rtms=same_building_deals),
+                                sleep=lambda seconds: None, clock=lambda: next(readings, later))
+        return code, stdout.getvalue()
 
-        def run(argv):
-            stdout, stderr = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                code = collect.main(argv, env=ENV, transport=paged(rows_for(1), rtms=same_building_deals),
-                                    sleep=lambda seconds: None, clock=lambda: next(readings, 10.0**6))
-            return code
-        self.assertEqual(run(["collect", "--out", self.out, "--now", NOW, "--first-run"]), 0)
+    def test_backfill_stops_at_40_minutes_but_refresh_runs(self):
+        code, _ = self.run_with_clock(45 * 60.0, "--first-run")
+        self.assertEqual(code, 0)
         names = sorted(os.path.basename(path) for path in self.rtms_files(self.out))
         self.assertEqual(names, ["202610.json", "202611.json"])
         state = json.loads(snapshot(self.out)[os.path.join("cache", "backfill_state.json")])
         self.assertEqual(state["apis"]["apt"]["deferred"], 10)
+
+    def test_nothing_is_fetched_after_50_minutes_and_yesterday_stays(self):
+        self.first_run_into_prev_with(same_building_deals)
+        code, out = self.run_with_clock(55 * 60.0, "--prev", self.prev)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.rtms_files(self.out), self.rtms_files(self.prev))
+        self.assertIn("fetched=0 failed=0 deferred=2", out)
+        self.assertIn("rtms manifest: files=12", out)
+
+    def test_gone_pair_keeps_its_months_for_14_days(self):
+        def deals(url, i):
+            return same_building_deals(url, i) if "LAWD_CD=11110" in url else ok(rtms_body([]))
+        december = {"cltrBidBgngDt": "202612091000", "cltrBidEndDt": "202612111700"}
+        busan = [{**row, **december} for row in busan_rows(1)]
+        seoul = [{**row, **december} for row in rows_for(9)]
+        code, _, err = self.run_collect(paged(seoul + busan, rtms=deals), "--first-run")   # 2026-11-02 KST
+        self.assertEqual(code, 0, err)
+        busan_dir = os.path.join("cache", "rtms", "apt", "26110") + os.sep
+        for day, kept in (("2026-11-15T20:10:00Z", 12), ("2026-11-16T20:10:00Z", 0)):   # KST +14, +15 days
+            os.rename(self.out, self.prev)
+            code, _, err = self.run_collect(paged(seoul, rtms=deals), "--prev", self.prev, now=day)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(sum(1 for p in self.rtms_files(self.out) if p.startswith(busan_dir)), kept, day)
+            shutil.rmtree(self.prev)
 
     def test_missing_rtms_cache_in_prev_is_a_full_backfill(self):
         self.first_run_into_prev(rows_for(1))
