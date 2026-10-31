@@ -12,3 +12,6 @@ __pycache__/
 # Never keep a key file in this repository.
 *.key
 .env
+
+# Local real-API measurement (A9): raw MOLIT responses and call tally, never committed.
+/.local/
