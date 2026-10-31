@@ -10,9 +10,14 @@ by or acting for 한국자산관리공사(캠코), 온비드 or 국토교통부.
 - `data` (force-pushed once a day, one commit): what the app reads —
   `v1/index.json`, `v1/items/<sido>.json` — plus the collector's own state
   `cache/seen.json` (day-to-day history) and `cache/budget.json` (daily
-  call counts). The app never reads outside `v1/`.
+  call counts), the real-transaction cache `cache/rtms/<api>/<lawd>/<yyyymm>.json`
+  (summary rows of the last 12 months per sgg and MOLIT API) and
+  `cache/backfill_state.json` (progress per API). The app never reads
+  outside `v1/`.
 
-Source: 공공데이터포털 (한국자산관리공사·국토교통부 제공), dataset 15157207.
+Source: 공공데이터포털 (한국자산관리공사·국토교통부 제공), datasets 15157207
+(Onbid) and 15126468·15126467·15126464·15126466·15126465·15126463·15126470
+(MOLIT real-transaction prices).
 
 ## Output (`v1/`)
 
@@ -22,7 +27,22 @@ Source: 공공데이터포털 (한국자산관리공사·국토교통부 제공)
   province has count 0).
 - `items/<sido>.json`: `{schemaVersion, generatedAt, sido, items}`; items
   sorted by `key`. Field list and rules: `collector/validate.py`
-  (`FIELDS`, D13 rules). `compare` is `{"kind": "none"}` until Phase 3.
+  (`FIELDS`, D13 rules).
+- `compare` (research §3.4, `collector/compare.py`, numbers in
+  `collector/data/compare_params.json`), exact shapes checked by
+  `validate.py`:
+  - `{"kind": "none"}`
+  - `{"kind": "sameBuilding", "months": 12, "n", "medianPerM2", "estimate",
+    "ratio", "deals"}` — apt/rh/offi items, same building key (PNU without the
+    11th digit), area ±10% (inclusive), at least 3 deals; the median is over
+    all `n` matches, `deals` shows the 10 newest; `ratio` is null for share
+    items or a null `lowestBid`.
+  - `{"kind": "sameDong", "months": 12, "n", "medianPerM2", "deals"}` — same
+    읍면동, area ±30%, land: same 지목, commercial/factory: same building use
+    (tables in `compare_params.json`; an unmapped usage code gets none); the
+    10 newest deals, `n` = number shown.
+  - `deals[]` = `{ym: "2026-09", m2, floor (int or null, basement < 0), amount (원)}`.
+  Raw MOLIT rows never reach `v1/`.
 - Compact JSON, keys sorted, final newline; same input gives the same
   bytes. Every file ≤ 5MB (index ≤ 256KB), same caps as the app.
 
@@ -32,7 +52,7 @@ Source: 공공데이터포털 (한국자산관리공사·국토교통부 제공)
 python3 -m unittest discover collector/tests          # all tests, no network
 python3 -m collector.collect --out out --first-run \
   --offline-fixtures collector/tests/fixtures/onbid_pages \
-  --now 2026-10-31T20:10:00Z                           # dry run, no key
+  --now 2026-10-31T20:10:00Z                           # dry run, no key (Onbid + MOLIT fixtures)
 python3 -m collector.validate_output out
 ```
 
@@ -51,6 +71,21 @@ pages fails the run; a failed page is retried once after 3 seconds;
 more than 20% or 500 dropped records fails the run; the daily cap
 (900 calls per API, KST day) is checked before calling.
 
+Real-transaction rules (plan D17, D29 ②, Phase 3): MOLIT is called only
+with current, selectable LAWD_CD codes (old codes answer zero rows) for
+the (API, sgg) pairs that have items. Every day the current and previous
+month of every pair are fetched again; missing months of the 12-month
+window are backfilled (pairs with more items first, recent months first)
+until the API's daily cap (900) or, for backfill only, 40 minutes after
+the collector started — the rest continues the next day. Months 2–11
+back are never fetched again (late cancellations are accepted). The seven
+APIs run side by side (one thread and client each, 4 tps each, 28 tps in
+total under the 30 tps limit); a page is retried once after 2 seconds.
+A failed month keeps yesterday's file; more than 10% failed months fails
+the run (exit 1). Gateway code 22 (provider's daily limit) stops that API
+for the day without counting as a failure. Bodies must be strict UTF-8
+(no BOM, no other `encoding=`), no DOCTYPE/ENTITY, at most 2MB.
+
 ## Secrets (plan D28)
 
 The key comes only from the environment variable `DATA_GO_KR_SERVICE_KEY`
@@ -63,8 +98,13 @@ path with a fake key and checks stdout, stderr and files.
 ## Manual fallback (research Q11)
 
 If Actions is blocked, run the same collector locally and push `data` by
-hand (진호님). Keep same-day manual reruns to **10 or fewer**: a failed run
-does not record its calls, so the daily cap cannot see them.
+hand (진호님). Keep same-day manual reruns to **10 or fewer** for Onbid: a
+failed run does not record its calls, so the daily cap cannot see them.
+MOLIT is tighter: one failed run can already have spent most of the land
+API's real 1,000-call day, so after a failed run that got past the Onbid
+list, rerun **once** at most the same day. If the provider's limit is hit
+anyway (code 22), the collector stops that API for the day and continues
+tomorrow.
 
 ```sh
 cd ~/Documents/public-auction-data
@@ -129,24 +169,28 @@ proposes updates monthly.
   and item new. `golden_boundary/day1` = first run at
   `2026-10-31T20:10:00Z`, `golden_boundary/day2` = `--prev day1` at
   `2026-11-01T20:10:00Z` (pinned by a test).
+- `collector/tests/fixtures/onbid_pages/rtms_<api>_<lawd>_<yyyymm>.xml` —
+  MOLIT pages for the sggs of those items, cut from the A9 measurement
+  responses (2025-11 … 2026-10, uncommitted `.local/a9/raw/`) down to the
+  items' 읍면동 with `collector/dev/cut_rtms_fixture.py` (same comparison
+  result as the full page). Months without a file are served empty.
+- `collector/tests/fixtures/raw/rtms_*.xml` — Phase 1 raw MOLIT responses
+  (parser tests).
 - `collector/tests/fixtures/golden/` — the dry-run output of the real
-  pages at `--now 2026-10-31T20:10:00Z` (pinned by a test).
+  pages at `--now 2026-10-31T20:10:00Z` (pinned by a test). `v1/` and
+  `cache/*.json` are kept byte for byte; the `cache/rtms/` month files are
+  pinned by `rtms_manifest.json` (file count, row count, digest, non-empty
+  files) instead of being copied.
 - The app's `test/fixtures/items_sample/real_day1/` is a copy of
   `golden/v1/`, and `items_sample/boundary_day2/` of
   `golden_boundary/day2/v1/`. Regenerate only on purpose:
 
   ```sh
-  rm -rf collector/tests/fixtures/golden
-  python3 -m collector.collect --out collector/tests/fixtures/golden --first-run \
-    --offline-fixtures collector/tests/fixtures/onbid_pages --now 2026-10-31T20:10:00Z
-  F=collector/tests/fixtures
-  python3 -I collector/dev/make_boundary_fixture.py $F/boundary
-  rm -rf $F/golden_boundary
-  python3 -m collector.collect --out $F/golden_boundary/day1 --first-run \
-    --offline-fixtures $F/boundary/day1 --now 2026-10-31T20:10:00Z
-  python3 -m collector.collect --out $F/golden_boundary/day2 --prev $F/golden_boundary/day1 \
-    --offline-fixtures $F/boundary/day2 --now 2026-11-01T20:10:00Z
+  python3 -I collector/dev/make_boundary_fixture.py collector/tests/fixtures/boundary   # if changed
+  python3 -I collector/dev/regen_golden.py
   ```
+- `collector/dev/measure_a9.py` — the plan A9 re-measurement (real MOLIT
+  calls with a key file, raw pages kept in the gitignored `.local/`).
 
 ## Known limits
 
@@ -156,9 +200,13 @@ proposes updates monthly.
   step 4c.
 - A failed run does not record its calls in `cache/budget.json` (the data
   branch is untouched). Onbid uses about 49 of 900 calls a day, so keep
-  same-day manual reruns to 10 or fewer.
+  same-day manual reruns to 10 or fewer (MOLIT: once, see above).
+- Right after step 4c many items show `compare: none` until the backfill
+  has filled the 12-month window (see public_auction_alert `data_spike.md`
+  §13 for the call and day estimates).
 - Monthly keepalive: on KST days 1–3, if `main` has no commit yet that
   month, the workflow commits `status/last_run.md`; a rejected push only
   warns (the data branch is already published) and is retried next day.
-- Phase 3 (real-transaction comparison) plugs in at
-  `collector/compare_hook.py`.
+- Real-transaction comparison: `collector/compare_hook.py` (stage),
+  `rtms_client.py` (calls, strict XML, summary rows), `rtms_cache.py`,
+  `backfill.py`, `pnu.py`, `compare.py`.
