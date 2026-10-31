@@ -1,0 +1,109 @@
+# Daily public-auction collector (public_auction_alert plan D30, D28, D29).
+# 05:00 KST = 20:00 UTC. Order: unit tests -> yesterday's `data` branch into
+# prev/ -> collect -> validate -> new orphan commit -> force-push `data`.
+# A failed step stops the job before the push, so the app keeps yesterday's
+# copy (D29 5). The service key lives only in the Collect step's env.
+# Never add `set -x` here (D28).
+#
+# TODO(4c): the two action SHAs below are copied from
+# ~/Documents/revenue_tracker/.github/workflows/collect.yml (in use there as
+# v4 / v5). They could not be verified against GitHub offline in Phase 2.
+# Before the first push, confirm each SHA is the commit of the tagged
+# release on github.com/actions/checkout and github.com/actions/setup-python.
+name: collect
+
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (TODO(4c) verify SHA)
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 (TODO(4c) verify SHA)
+        with:
+          python-version: "3.11"
+
+      - name: Unit tests
+        run: python3 -m unittest discover collector/tests
+
+      - name: Check out yesterday's data branch into prev/
+        id: prev
+        run: |
+          set +e
+          git ls-remote --exit-code --heads origin data > /dev/null
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            git fetch --depth 1 origin data
+            git worktree add --detach prev FETCH_HEAD
+            echo "mode=prev" >> "$GITHUB_OUTPUT"
+          elif [ "$code" -eq 2 ]; then
+            echo "No data branch yet: first run."
+            echo "mode=first" >> "$GITHUB_OUTPUT"
+          else
+            echo "Could not list remote branches (exit $code)."
+            exit 1
+          fi
+
+      - name: Collect
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          PREV_MODE: ${{ steps.prev.outputs.mode }}
+        run: |
+          if [ "$PREV_MODE" = "prev" ]; then
+            python3 -m collector.collect --out out --prev prev
+          else
+            python3 -m collector.collect --out out --first-run
+          fi
+
+      - name: Validate output
+        run: python3 -m collector.validate_output out
+
+      - name: Publish the data branch (one orphan commit, force push)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          cd out
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add v1 cache
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push --force "https://github.com/$REPO.git" data:data
+
+      - name: Monthly activity commit on main (60-day schedule pause, D30)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$(TZ=Asia/Seoul date +%d)" != "01" ]; then
+            echo "Not the 1st in KST; nothing to record."
+            exit 0
+          fi
+          auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          printf '# Last successful collection\n\n%s (KST)\n' "$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M)" > status/last_run.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add status/last_run.md
+          git commit -q -m "chore: record last successful collection" || exit 0
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "https://github.com/$REPO.git" HEAD:main
