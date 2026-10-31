@@ -1,8 +1,8 @@
 """HTTP access for the collector (plan D27, D28).
 
 The transport is injected so tests never touch the network. The client
-adds the key, spaces calls (tps), caps the body, refuses redirects and
-XML DOCTYPE/ENTITY, and turns every failure into an ApiError that names
+adds the key, spaces calls (tps), caps the body, refuses redirects, NUL
+bytes and XML DOCTYPE/ENTITY, and turns every failure into an ApiError that names
 the operation, HTTP status and resultCode only.
 """
 
@@ -126,6 +126,8 @@ class ApiClient:
             raise ApiError(operation, status=response.status, result_code=result_code_of(body[:max_bytes]))
         if len(body) > max_bytes:
             raise ApiError(operation, status=response.status, reason="body too large")
+        if b"\x00" in body:   # UTF-16/32 or binary: never handed to a parser
+            raise ApiError(operation, status=response.status, reason="NUL byte")
         if _DTD.search(body):
             raise ApiError(operation, status=response.status, reason="DOCTYPE or ENTITY")
         return body

@@ -10,13 +10,14 @@ is an empty cache and a broken month file is skipped (refetched).
 
 from __future__ import annotations
 
-import json
+import datetime
 import os
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping
 
 from collector import rtms_cache, seen_history
+from collector.config import KST, MAX_INDEX_BYTES as MAX_INDEX_FILE
 from collector.errors import ValidationFailed
 
 
@@ -28,14 +29,20 @@ class Previous:
     counts: Mapping[str, int] = field(default_factory=lambda: MappingProxyType({}))
     rtms: rtms_cache.Cache = field(default_factory=lambda: MappingProxyType({}))
     rtms_skipped: int = 0
+    backfill_state: object = None
 
 
 FIRST_RUN = Previous(seen=None, total=None, budget=None)
 
 
-def _read_json(path: str) -> object:
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
+# Security LOW-1: size caps before json.load (seen.json for ~10,000 items is about 2MB).
+MAX_INDEX_BYTES = MAX_INDEX_FILE
+MAX_SEEN_BYTES = 64 * 1024 * 1024
+MAX_SMALL_BYTES = 1024 * 1024
+
+
+def _read_json(path: str, max_bytes: int) -> object:
+    return rtms_cache.read_json(path, max_bytes)
 
 
 def _counts(index: object) -> dict[str, int]:
@@ -53,16 +60,25 @@ def _counts(index: object) -> dict[str, int]:
     return counts
 
 
-def load(folder: str) -> Previous:
+def _optional_json(path: str) -> object:
     try:
-        counts = _counts(_read_json(os.path.join(folder, "v1", "index.json")))
-        seen = seen_history.parse(_read_json(os.path.join(folder, "cache", "seen.json")))
-    except (OSError, ValueError):
+        return _read_json(path, MAX_SMALL_BYTES)
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def load(folder: str, today: datetime.date | None = None) -> Previous:
+    today = today or datetime.datetime.now(KST).date()
+    try:
+        counts = _counts(_read_json(os.path.join(folder, "v1", "index.json"), MAX_INDEX_BYTES))
+        seen = seen_history.parse(_read_json(os.path.join(folder, "cache", "seen.json"), MAX_SEEN_BYTES))
+    except (OSError, UnicodeDecodeError, ValueError):
         raise ValidationFailed("previous copy is missing or unreadable (v1/index.json, cache/seen.json)") from None
+    budget = _optional_json(os.path.join(folder, "cache", "budget.json"))
+    state = _optional_json(os.path.join(folder, "cache", "backfill_state.json"))
     try:
-        budget = _read_json(os.path.join(folder, "cache", "budget.json"))
-    except (OSError, ValueError):
-        budget = None
-    rtms, skipped = rtms_cache.load_folder(folder)
+        rtms, skipped = rtms_cache.load_folder(folder, today)
+    except (OSError, ValueError) as error:
+        raise ValidationFailed(f"previous real-transaction cache refused: {error}") from None
     return Previous(seen=seen, total=sum(counts.values()), budget=budget, counts=MappingProxyType(counts),
-                    rtms=MappingProxyType(rtms), rtms_skipped=skipped)
+                    rtms=MappingProxyType(rtms), rtms_skipped=skipped, backfill_state=state)

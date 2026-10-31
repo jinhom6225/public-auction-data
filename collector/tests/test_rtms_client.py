@@ -64,9 +64,31 @@ class StrictXmlTest(unittest.TestCase):
                             "UTF-8")
 
     def test_utf16_doctype_is_refused(self):
-        body = '<?xml version="1.0" encoding="utf-16"?><!DOCTYPE r [<!ENTITY a "b">]><response/>'.encode("utf-16")
-        with self.assertRaises(ApiError):
-            rtms_client.parse_page(body, "op")
+        text = '<?xml version="1.0" encoding="utf-16"?><!DOCTYPE r [<!ENTITY a "b">]><response>&a;</response>'
+        for codec in ("utf-16", "utf-16-le", "utf-16-be"):
+            with self.assertRaises(ApiError, msg=codec):
+                rtms_client.parse_page(text.encode(codec), "op")
+
+    def test_nul_and_illegal_control_characters_are_refused(self):
+        self.assert_refused(rtms_body([]).replace(b"<header>", b"<header>\x00"), "control")
+        for char in ("\x01", "\x08", "\x0b", "\x1f", "\ufffe"):
+            self.assert_refused(rtms_body([rtms_item(umdNm="화곡" + char)]), "control")
+        self.assertEqual(rtms_client.parse_page(rtms_body([rtms_item(umdNm="a\tb")]), "op").total, 1)
+
+    def test_body_must_start_with_a_tag(self):
+        for prefix in (b" ", b"\n", b"x"):
+            self.assert_refused(prefix + rtms_body([]), "start")
+
+    def test_item_with_too_many_fields_is_refused(self):
+        wide = rtms_item(**{f"f{i}": "x" for i in range(60)})
+        self.assert_refused(rtms_body([wide]), "fields")
+        self.assertEqual(rtms_client.parse_page(rtms_body([rtms_item(**{f"f{i}": "x" for i in range(40)})]),
+                         "op").total, 1)
+
+    def test_expat_is_recent_enough(self):
+        import pyexpat
+        version = tuple(int(part) for part in pyexpat.EXPAT_VERSION.split("_")[1].split("."))
+        self.assertGreaterEqual(version, (2, 4, 1))
 
     def test_doctype_and_entity_in_decoded_text_are_refused(self):
         for extra in ('<!DOCTYPE response>', '<!ENTITY x "y">', "<! doctype response>"):
@@ -262,10 +284,34 @@ class FetchMonthTest(unittest.TestCase):
         self.assertEqual(result.status, "failed")
         self.assertIn("too large", result.error)
 
+    def test_too_many_rows_on_a_page_fails(self):
+        transport = RecordingTransport(lambda url, i: ok(rtms_body([rtms_item()] * 1001, total=1001)))
+        result = rtms_client.fetch_month(client(transport), "rh", "11500", "202609", budget(), INDEX)
+        self.assertEqual(result.status, "failed")
+        self.assertIn("more rows than", result.error)
+
+    def test_total_above_the_page_limit_fails_after_one_page(self):
+        transport = RecordingTransport(lambda url, i: ok(rtms_body([rtms_item()] * 1000, total=10001)))
+        result = rtms_client.fetch_month(client(transport), "rh", "11500", "202609", budget(), INDEX)
+        self.assertEqual((result.status, len(transport.urls)), ("failed", 1))
+
+    def test_http_429_is_the_daily_limit(self):
+        transport = RecordingTransport(lambda url, i: Response(429, b""))
+        result = rtms_client.fetch_month(client(transport), "apt", "11500", "202609", budget(), INDEX)
+        self.assertEqual((result.status, len(transport.urls)), ("quota", 1))
+
+    def test_auth_codes_stop_without_retry(self):
+        for code in ("30", "31", "32"):
+            body = read_raw("error_rtms_rh_fake_key.xml").replace(b">30<", f">{code}<".encode())
+            for status in (403, 200):
+                transport = RecordingTransport(lambda url, i: Response(status, body))
+                result = rtms_client.fetch_month(client(transport), "rh", "11500", "202609", budget(), INDEX)
+                self.assertEqual((result.status, len(transport.urls)), ("auth", 1), (code, status))
+
     def test_errors_carry_no_key(self):
         transport = RecordingTransport(lambda url, i: Response(403, read_raw("error_rtms_rh_fake_key.xml")))
         result = rtms_client.fetch_month(client(transport), "rh", "11500", "202609", budget(), INDEX)
-        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.status, "auth")
         self.assertNotIn(FAKE_KEY, result.error)
         self.assertNotIn("serviceKey", result.error)
         self.assertIn("resultCode 30", result.error)

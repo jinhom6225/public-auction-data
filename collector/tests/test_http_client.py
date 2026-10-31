@@ -48,6 +48,14 @@ class ApiClientTest(unittest.TestCase):
                 client(transport).get("op", URL, {}, max_bytes=1000)
             self.assertEqual(ctx.exception.reason, "DOCTYPE or ENTITY")
 
+    def test_nul_bytes_are_rejected(self):
+        # Security MEDIUM-1: UTF-16 bodies (any NUL byte) never reach a parser.
+        for body in (b'{"a":1}\x00', '<!DOCTYPE x>'.encode("utf-16-le"), '<!ENTITY x "y">'.encode("utf-16-be")):
+            transport = RecordingTransport(lambda url, i: ok(body))
+            with self.assertRaises(ApiError) as caught:
+                client(transport).get("op", "https://example.test/x", {}, max_bytes=1000)
+            self.assertIn("NUL", str(caught.exception))
+
     def test_http_error_carries_status_and_result_code_only(self):
         body = (b'{"OpenAPI_ServiceResponse":{"cmmMsgHeader":{"errMsg":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR",'
                 b'"returnReasonCode":"30"}}}')

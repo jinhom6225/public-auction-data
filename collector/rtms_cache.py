@@ -9,6 +9,8 @@ app does not read `cache/`. A month with zero deals is still a file — it
 records that the month was fetched. The window is the current month plus
 the 11 before (KST); files outside it are not carried over (deleted with
 the next orphan commit). A broken file is skipped, counted and refetched.
+Reading is bounded (file size, rows, file count, nesting depth, a real
+`fetched` date) and refuses symlinks.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from collector.config import RTMS_APIS, SCHEMA_VERSION
-from collector.rtms_client import ROW_FIELDS, TEXT_LIMIT
+from collector.rtms_client import MAX_MONTH_ROWS, ROW_FIELDS, TEXT_LIMIT
 from collector.values import MAX_AMOUNT, MAX_AREA
 
 ROOT = "cache/rtms"
@@ -32,6 +34,12 @@ _DONG = re.compile(r"[0-9]{10}")
 _KEY = re.compile(r"[0-9]{18}")
 
 Slot = tuple[str, str, str]   # (api, lawd, yyyymm)
+
+# Security LOW-1: limits for reading yesterday's cache (about 11,300 files are
+# expected; a month has at most 10,000 rows of about 90 bytes).
+MAX_FILE_BYTES = 1024 * 1024
+MAX_ROWS = MAX_MONTH_ROWS
+MAX_FILES = 40_000
 
 
 @dataclass(frozen=True)
@@ -116,7 +124,18 @@ def _row_ok(api: str, row: object) -> bool:
         _FIELD_CHECKS[name](row[name]) for name in fields)
 
 
-def parse_month(path: str, data: object) -> Month | None:
+def _fetched_ok(fetched: object, ym: str, today: datetime.date) -> bool:
+    """LOW-2: a real date on or after the first day of the month, not after today."""
+    if not isinstance(fetched, str) or not _DATE.fullmatch(fetched):
+        return False
+    try:
+        day = datetime.date.fromisoformat(fetched)
+    except ValueError:
+        return False
+    return datetime.date(int(ym[:4]), int(ym[4:]), 1) <= day <= today
+
+
+def parse_month(path: str, data: object, today: datetime.date) -> Month | None:
     match = _PATH.fullmatch(path)
     if not match or not isinstance(data, dict):
         return None
@@ -125,35 +144,62 @@ def parse_month(path: str, data: object) -> Month | None:
         return None
     if (data.get("api"), data.get("lawd"), data.get("ym")) != (api, lawd, ym):
         return None
-    fetched, rows = data.get("fetched"), data.get("rows")
-    if not isinstance(fetched, str) or not _DATE.fullmatch(fetched) or not isinstance(rows, list):
+    rows = data.get("rows")
+    if not _fetched_ok(data.get("fetched"), ym, today) or not isinstance(rows, list) or len(rows) > MAX_ROWS:
         return None
     if not all(_row_ok(api, row) for row in rows):
         return None
-    return Month(api, lawd, ym, fetched, tuple(rows))
+    return Month(api, lawd, ym, data["fetched"], tuple(rows))
 
 
-def _read(path: str) -> object:
+def read_json(path: str, max_bytes: int) -> object:
+    """JSON of a small trusted-shape file; ValueError when too big, broken or too deeply nested."""
+    if os.path.getsize(path) > max_bytes:
+        raise ValueError("file too large")
     with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
+        try:
+            return json.load(handle)
+        except RecursionError:
+            raise ValueError("JSON nested too deeply") from None
 
 
-def load_folder(folder: str) -> tuple[dict[Slot, Month], int]:
-    """(cache, number of skipped files) from `<folder>/cache/rtms/`."""
-    base = os.path.join(folder, *ROOT.split("/"))
+def _root(folder: str) -> str:
+    """LOW-3: `cache/rtms` must be a real folder inside [folder] (no symlinks on the way)."""
+    cache, base = os.path.join(folder, "cache"), os.path.join(folder, *ROOT.split("/"))
+    if os.path.islink(cache) or os.path.islink(base):
+        raise ValueError("cache/rtms must not be a symlink")
+    real_folder, real_base = os.path.realpath(folder), os.path.realpath(base)
+    if os.path.commonpath([real_folder, real_base]) != real_folder:
+        raise ValueError("cache/rtms is outside the previous copy")
+    return base
+
+
+def _load_file(folder: str, full: str, today: datetime.date) -> Month | None:
+    if os.path.islink(full):
+        return None
+    rel = os.path.relpath(full, folder).replace(os.sep, "/")
+    try:
+        return parse_month(rel, read_json(full, MAX_FILE_BYTES), today)
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def load_folder(folder: str, today: datetime.date) -> tuple[dict[Slot, Month], int]:
+    """(cache, number of skipped files) from `<folder>/cache/rtms/`.
+
+    ValueError (the run fails) for a symlinked or escaping root or more than
+    MAX_FILES files; a single bad, oversized or odd file is skipped and counted.
+    """
+    base = _root(folder)
     cache: dict[Slot, Month] = {}
-    bad = 0
+    bad = seen = 0
     for current, dirs, names in os.walk(base):
         dirs[:] = sorted(d for d in dirs if not os.path.islink(os.path.join(current, d)))
         for name in sorted(names):
-            full = os.path.join(current, name)
-            rel = os.path.relpath(full, folder).replace(os.sep, "/")
-            entry = None
-            if not os.path.islink(full):
-                try:
-                    entry = parse_month(rel, _read(full))
-                except (OSError, UnicodeDecodeError, ValueError):
-                    entry = None
+            seen += 1
+            if seen > MAX_FILES:
+                raise ValueError(f"more than {MAX_FILES} files under {ROOT}")
+            entry = _load_file(folder, os.path.join(current, name), today)
             if entry is None:
                 bad += 1
             else:

@@ -54,7 +54,11 @@ ENDPOINTS: Mapping[str, Endpoint] = MappingProxyType({
 assert tuple(ENDPOINTS) == RTMS_APIS
 
 OK_CODE = "000"
-QUOTA_CODES = frozenset({"22"})
+QUOTA_CODES = frozenset({"22"})          # provider's daily limit (expected per data.go.kr, not yet observed)
+QUOTA_STATUS = 429
+AUTH_CODES = frozenset({"30", "31", "32"})   # unregistered / expired / unapproved key: no retry today
+MAX_ITEM_FIELDS = 60
+MAX_MONTH_ROWS = RTMS_PAGE_SIZE * RTMS_MAX_PAGES
 BUILDING_APIS = frozenset({"apt", "rh", "offi"})
 
 # MOLIT area field per API (research §3.4: 전용면적 for apt/rh/offi).
@@ -74,6 +78,7 @@ TEXT_LIMIT = 30
 _DECLARATION = re.compile(r"<\?xml\b[^>]*\?>")
 _ENCODING = re.compile(r"""encoding\s*=\s*["']([^"']*)["']""")
 _DTD = re.compile(r"<!\s*(DOCTYPE|ENTITY)", re.IGNORECASE)
+_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")   # not allowed in XML 1.0
 _CODE = re.compile(r"[0-9A-Za-z_]{1,10}")
 _COUNT = re.compile(r"[0-9]{1,9}")
 _MAN_WON = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})*|[0-9]+")
@@ -91,7 +96,7 @@ class Page:
 
 @dataclass(frozen=True)
 class MonthResult:
-    status: str                       # ok | failed | capped | quota
+    status: str                       # ok | failed | capped | quota | auth
     rows: tuple[Mapping[str, str], ...]
     budget: Budget
     error: str | None = None
@@ -110,6 +115,10 @@ def _decoded(body: bytes, operation: str) -> str:
         text = body.decode("utf-8")
     except UnicodeDecodeError:
         raise _refuse(operation, "body is not UTF-8") from None
+    if not text.startswith("<"):
+        raise _refuse(operation, "body does not start with a tag")
+    if _ILLEGAL.search(text):
+        raise _refuse(operation, "illegal control character")
     declaration = _DECLARATION.match(text)
     if declaration:
         encoding = _ENCODING.search(declaration.group())
@@ -130,6 +139,8 @@ def _rows(root: ET.Element) -> tuple[Mapping[str, str], ...]:
     items = root.find("body/items")
     if items is None:
         return ()
+    if any(len(item) > MAX_ITEM_FIELDS for item in items.iter("item")):
+        raise _refuse("rtms", "item has too many fields")
     return tuple(MappingProxyType({child.tag: (child.text or "").strip() for child in item})
                  for item in items.findall("item"))
 
@@ -248,10 +259,22 @@ def _page_with_retry(client: ApiClient, api: str, lawd: str, ym: str, page: int,
         try:
             return _call_page(client, api, lawd, ym, page), budget
         except ApiError as failure:
-            if failure.result_code in QUOTA_CODES:
+            if failure.result_code in QUOTA_CODES or failure.status == QUOTA_STATUS:
                 return MonthResult("quota", (), budget, str(failure)), budget
+            if failure.result_code in AUTH_CODES:
+                return MonthResult("auth", (), budget, str(failure)), budget
             error = failure
     return MonthResult("failed", (), budget, str(error)), budget
+
+
+def _page_problem(page: Page, total: int | None) -> str | None:
+    if len(page.rows) > RTMS_PAGE_SIZE:
+        return "page has more rows than numOfRows"
+    if total is None and page.total > MAX_MONTH_ROWS:
+        return "totalCount above the page limit"
+    if total is not None and page.total != total:
+        return "totalCount changed between pages"
+    return None
 
 
 def fetch_month(client: ApiClient, api: str, lawd: str, ym: str, budget: Budget,
@@ -265,8 +288,9 @@ def fetch_month(client: ApiClient, api: str, lawd: str, ym: str, budget: Budget,
         page, budget = _page_with_retry(client, api, lawd, ym, page_no, budget)
         if isinstance(page, MonthResult):
             return page
-        if total is not None and page.total != total:
-            return MonthResult("failed", (), budget, str(_refuse(operation, "totalCount changed between pages")))
+        problem = _page_problem(page, total)
+        if problem:
+            return MonthResult("failed", (), budget, str(_refuse(operation, problem)))
         total = page.total
         rows.extend(page.rows)
         if len(rows) >= total or len(page.rows) < RTMS_PAGE_SIZE:

@@ -47,7 +47,7 @@ DAILY_CAPS = {"onbid": 900, **{api: 900 for api in RTMS_APIS}}
 RTMS_MAX_BYTES = 2 * 1024 * 1024
 RTMS_TPS = 4                  # per API thread; 7 APIs x 4 = 28 <= the 30 tps limit
 RTMS_PAGE_SIZE = 1000         # 5000 is accepted but >1000 rows per page was never confirmed
-RTMS_MAX_PAGES = 20
+RTMS_MAX_PAGES = 10           # also the row cap of one cached month (10,000)
 RTMS_RETRY_WAIT_SECONDS = 2.0
 RTMS_MAX_FAILURE_SHARE = 0.10
 # Backfill (months that are not the current or previous month) is not
@@ -56,6 +56,12 @@ RTMS_MAX_FAILURE_SHARE = 0.10
 # answers in about 1 s per call); the rest continues the next day. Refresh
 # of the current and previous month always runs.
 RTMS_BACKFILL_SECONDS = 40 * 60
+# Review HIGH-1: after this many seconds since the collector started no
+# MOLIT month is fetched at all (refresh included); those months keep
+# yesterday's file and are not counted as failed.
+RTMS_STAGE_SECONDS = 50 * 60
+# Review MEDIUM-3: a (API, sgg) pair whose items are gone keeps its months this long.
+PAIR_RETENTION_DAYS = 14
 
 # D29 (3): fail when the national item count drops more than this versus
 # yesterday. Starting value; fixed after 7 days of totalCount observation
