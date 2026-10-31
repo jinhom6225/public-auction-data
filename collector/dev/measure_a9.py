@@ -49,6 +49,18 @@ GOLDEN_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "te
 _ALIAS = {endpoint.url: api for api, endpoint in rtms_client.ENDPOINTS.items()}
 
 
+REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+
+def check_work_dir(work: str) -> None:
+    """Raw responses stay out of git: inside the repository only under the ignored `.local/`."""
+    real, root = os.path.realpath(work), os.path.realpath(REPO_ROOT)
+    local = os.path.join(root, ".local")
+    inside = os.path.commonpath([real, root]) == root
+    if inside and os.path.commonpath([real, local]) != local:
+        sys.exit("work_dir inside the repository must be under .local/")
+
+
 def read_key() -> str:
     path = os.environ.get("AUCTION_KEY_FILE")
     if not path:
@@ -248,6 +260,7 @@ def run(argv: list[str]) -> int:
     if len(argv) < 3:
         sys.exit(__doc__)
     dump_dir, work = argv[1], argv[2]
+    check_work_dir(work)
     ctx = Context.load(DUMP_TIME)
     items = load_items(dump_dir, ctx)
     chosen = sample(items, golden_pairs(ctx))

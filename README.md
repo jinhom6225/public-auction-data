@@ -33,14 +33,22 @@ Source: 공공데이터포털 (한국자산관리공사·국토교통부 제공)
   `validate.py`:
   - `{"kind": "none"}`
   - `{"kind": "sameBuilding", "months": 12, "n", "medianPerM2", "estimate",
-    "ratio", "deals"}` — apt/rh/offi items, same building key (PNU without the
-    11th digit), area ±10% (inclusive), at least 3 deals; the median is over
-    all `n` matches, `deals` shows the 10 newest; `ratio` is null for share
-    items or a null `lowestBid`.
+    "ratio", "deals"}` — **apartment and officetel items only** (plan A9,
+    진호님 2026-11-01; rowhouse items, including 도시형생활주택/기타주거용, get
+    sameDong), same building key (PNU without the 11th digit), area ±10%
+    (inclusive), at least 3 deals; the median is over all `n` matches,
+    `deals` shows the 10 newest (`n` ≥ 3, `deals` = min(n, 10)); `ratio` is
+    null for share items, a null `lowestBid` or a ratio above 100,000; an
+    estimate above 1e13 falls back to sameDong.
   - `{"kind": "sameDong", "months": 12, "n", "medianPerM2", "deals"}` — same
     읍면동, area ±30%, land: same 지목, commercial/factory: same building use
     (tables in `compare_params.json`; an unmapped usage code gets none); the
-    10 newest deals, `n` = number shown.
+    10 newest deals, `n` = number shown. The unit is the **읍면동**, not the
+    리: an item in a 리 compares with deals anywhere in its 읍·면 (MOLIT
+    rows of 읍면 often name the 리, but the item's `umd` is the 읍면 code).
+    Without `umd` the PNU's 읍면동 is used.
+  - In both kinds the rounded `medianPerM2` must be 1..1e13 won/㎡,
+    otherwise the comparison falls back (sameBuilding → sameDong → none).
   - `deals[]` = `{ym: "2026-09", m2, floor (int or null, basement < 0), amount (원)}`.
   Raw MOLIT rows never reach `v1/`.
 - Compact JSON, keys sorted, final newline; same input gives the same
@@ -71,24 +79,44 @@ pages fails the run; a failed page is retried once after 3 seconds;
 more than 20% or 500 dropped records fails the run; the daily cap
 (900 calls per API, KST day) is checked before calling.
 
-Real-transaction rules (plan D17, D29 ②, Phase 3): MOLIT is called only
-with current, selectable LAWD_CD codes (old codes answer zero rows) for
-the (API, sgg) pairs that have items. Every day the current and previous
-month of every pair are fetched again; missing months of the 12-month
-window are backfilled (pairs with more items first, recent months first)
-until the API's daily cap (900) or, for backfill only, 40 minutes after
-the collector started — the rest continues the next day. Months 2–11
-back are never fetched again (late cancellations are accepted). The seven
-APIs run side by side (one thread and client each, 4 tps each, 28 tps in
-total under the 30 tps limit); a page is retried once after 2 seconds.
-A failed month keeps yesterday's file; more than 10% failed months fails
-the run (exit 1). Gateway code 22 (provider's daily limit — the expected
-code per data.go.kr, not yet observed) stops that API for the day without
-counting as a failure; if the gateway answers differently, those months
-count as failed and the run may exit 1 (data branch untouched). A pair
-(API, sgg) with no item today drops its cached months; they are fetched
-again when items come back. Bodies must be strict UTF-8
-(no BOM, no other `encoding=`), no DOCTYPE/ENTITY, at most 2MB.
+Real-transaction rules (plan D17, D29 ②, Phase 3 + review): MOLIT is
+called only with current, selectable LAWD_CD codes (old codes answer zero
+rows) for the (API, sgg) pairs that have items. Every day the current and
+previous month of every pair are fetched again; missing months of the
+12-month window are backfilled (pairs with more items first, recent months
+first) until the API's daily cap (900). Time limits from the collector
+start: no new backfill month after 40 minutes, no MOLIT call at all after
+50 minutes (those months keep yesterday's file, not counted as failed), so
+the 60-minute job timeout holds. Months 2–11 back are never fetched again
+(late cancellations are accepted). The seven APIs run side by side (one
+thread and client each, 4 tps each, 28 tps in total under the 30 tps
+limit); a page is retried once after 2 seconds.
+
+Failures: a failed month keeps yesterday's file. The run fails (exit 1)
+when more than 10% of the attempted months failed, or more than half of
+one API's. Once failures pass 10% of the planned months, or a thread hits
+a collector bug, every API thread stops calling. Gateway code 22 or HTTP
+429 (provider's daily limit — 22 is the expected data.go.kr code, not yet
+observed) stops that API for the day without counting as a failure. Auth
+codes 30–32 (key not registered/expired/not approved) stop that API
+without a retry and count as failed, so the run fails. A pair (API, sgg)
+whose items are gone keeps its cached months for 14 days
+(`backfill_state.json` `pairsLastSeen`), then drops them.
+
+Bodies: at most 2MB, no NUL byte (UTF-16/32 never reach a parser), strict
+UTF-8 starting with `<` (no BOM, no other `encoding=`, no XML-illegal
+control characters), no DOCTYPE/ENTITY in the decoded text, at most 1,000
+rows a page and 10,000 a month (checked on the first page), at most 60
+fields per deal. Reading yesterday's cache is bounded too: 1MB per month
+file, 10,000 rows, 40,000 files, nesting depth, a real `fetched` date
+(within the month to today), no symlinks; each run logs
+`rtms manifest: files=… rows=… sha256=…`.
+
+Land API ceiling (runbook): the daily refresh needs 2 calls per land pair,
+so above **450 land pairs** the 900 cap is spent on refresh alone (today
+237) and the lowest-priority pairs are not even refreshed. Before that,
+raise the land cap toward its real limit of 1,000/day or ask for the
+production account (운영계정).
 
 ## Secrets (plan D28)
 
@@ -107,7 +135,7 @@ failed run does not record its calls, so the daily cap cannot see them.
 MOLIT is tighter: one failed run can already have spent most of the land
 API's real 1,000-call day, so after a failed run that got past the Onbid
 list, rerun **once** at most the same day. If the provider's limit is hit
-anyway (code 22), the collector stops that API for the day and continues
+anyway (code 22 or HTTP 429), the collector stops that API for the day and continues
 tomorrow.
 
 ```sh
@@ -132,7 +160,10 @@ Rulesets):
 
 - `main`: block force pushes and deletion. No pull-request requirement
   (the workflow pushes the monthly keepalive commit directly).
-- `data`: block deletion only (the workflow force-pushes it daily).
+- `data`: block deletion, and restrict pushes to GitHub Actions (add the
+  GitHub Actions app as the only bypass actor of a "restrict updates"
+  rule) so nobody else can plant a crafted cache; the workflow
+  force-pushes it daily.
 
 The workflow job runs only on `refs/heads/main` and pins its actions by
 commit SHA (`actions/checkout` v4.4.0, `actions/setup-python` v5.6.0,
