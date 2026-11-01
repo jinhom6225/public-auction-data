@@ -148,7 +148,7 @@ bypass list or set the ruleset to *Disabled*; push; then remove yourself
 from the bypass list / set it back to *Active* right away.
 
 ```sh
-cd ~/Documents/public-auction-data
+cd ~/Documents/jinhom6225/public-auction-data
 read -rs DATA_GO_KR_SERVICE_KEY && export DATA_GO_KR_SERVICE_KEY   # never paste it into chat or files
 python3 -m unittest discover collector/tests
 git fetch --depth 1 origin data && git worktree add --detach prev FETCH_HEAD
