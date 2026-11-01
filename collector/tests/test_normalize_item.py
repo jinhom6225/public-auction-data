@@ -138,3 +138,12 @@ class RoundsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContactInNameDropTest(unittest.TestCase):
+    """Security review M1: counted under its own drop reason."""
+
+    def test_item_with_a_phone_number_in_its_name_is_dropped(self):
+        record, result = one(onbidCltrNm="서울특별시 종로구 청운동 12-3 청운아파트 문의 010-1234-5678")
+        self.assertIsNone(record)
+        self.assertEqual(result.dropped, {"contact in name": 1})

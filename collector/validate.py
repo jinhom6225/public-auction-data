@@ -47,6 +47,22 @@ UTC_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 DIGITS = {"pnu": re.compile(r"[0-9]{19}"), "umd": re.compile(r"[0-9]{10}")}
 
+# Security review M1: item names that carry contact details or links are
+# dropped (the app applies the same rule). Lot numbers such as 123-45 or
+# 1234-5678 never start with a 0 area code, so they do not match.
+CONTACT_IN_NAME = "contact in name"
+_CONTACT = re.compile(
+    r"(?<![0-9])01[016789][- .]?[0-9]{3,4}[- .]?[0-9]{4}(?![0-9])"     # mobile 010-1234-5678
+    r"|(?<![0-9-])0[0-9]{1,3}-[0-9]{3,4}-[0-9]{4}(?![0-9-])"           # area code 02-123-4567, 0505-…
+    r"|https?|hxxps?|://|www\."                                          # links
+    r"|[a-z0-9]\.(?:co\.kr|com|net|kr)(?![a-z0-9])",                      # example.com, abc.co.kr
+    re.IGNORECASE,
+)
+
+
+def has_contact(name: object) -> bool:
+    return isinstance(name, str) and _CONTACT.search(name) is not None
+
 
 def _int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
@@ -199,7 +215,8 @@ def record_problems(record: object, sido: str, index: RegionIndex) -> list[str]:
     missing = [f"missing {f}" for f in FIELDS if f not in record]
     if missing:
         return missing
-    problems = ["unexpected extra field"] if set(record) - set(FIELDS) else []
+    problems = [CONTACT_IN_NAME] if has_contact(record["name"]) else []
+    problems += ["unexpected extra field"] if set(record) - set(FIELDS) else []
     problems += [f"invalid {name}" for name, ok in _value_checks(record).items() if not ok]
     problems += _region_problems(record, sido, index)
     return problems + _schedule_problems(record["bidStart"], record["bidEnd"])

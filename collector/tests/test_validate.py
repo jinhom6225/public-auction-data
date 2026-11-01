@@ -180,3 +180,30 @@ class CompareRulesTest(unittest.TestCase):
         params = compare.Params.load()
         self.assertEqual((validate.MIN_SAME_BUILDING, validate.MAX_DEALS), (params.building_min, params.building_shown))
         self.assertEqual(validate.MAX_DEALS, params.dong_max)
+
+
+class ContactInNameTest(unittest.TestCase):
+    """Security review M1: names carrying phone numbers or links are dropped (the app has the same rule)."""
+
+    BASE = "서울특별시 강서구 화곡동 645-32 "
+
+    def problems(self, name):
+        return validate.record_problems(good(name=name), "11", INDEX)
+
+    def test_phone_numbers_and_links_are_rejected(self):
+        for tail in ("문의 010-1234-5678", "01012345678", "010 1234 5678", "010.1234.5678", "011-123-4567",
+                     "(02-123-4567)", "031-1234-5678", "연락처 0505-123-4567", "http://example.test/a",
+                     "HTTPS 안내", "www.example", "hxxp://x", "블로그 example.com", "abc.co.kr 참고",
+                     "site.net/a", "foo.kr", "EXAMPLE.COM", "ftp://x"):
+            self.assertEqual(self.problems(self.BASE + tail)[:1], ["contact in name"], tail)
+
+    def test_lot_numbers_and_ordinary_text_pass(self):
+        for name in ("서울특별시 강서구 화곡동 123-45", "경기도 양평군 산 1234-5678", "화곡동 1234-5678번지",
+                     "인천광역시 미추홀구 도화동 624-226 외 2필지 더머뭄 401호", "제101동 제14층 제1401호",
+                     "대지 1,234.5㎡ 중 1/2 지분", "B동 101호 (도로명: 화곡로 12-3)", "중구 무교동 1",
+                     "1012-3456 외 3필지", "강서구 등촌동 10-12 3층", "전남 순천시 해룡면 상삼리 693 금당그리안아파트"):
+            self.assertEqual(self.problems(name), [], name)
+
+    def test_contact_is_the_drop_reason_even_with_other_problems(self):
+        self.assertEqual(validate.record_problems(good(name="x 010-1234-5678", failCount=-1), "11", INDEX)[0],
+                         "contact in name")
