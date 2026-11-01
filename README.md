@@ -76,7 +76,9 @@ the workflow runs, step 4c**); a province that had at least 50 items
 yesterday and falls by more than 60% fails the run; a province file over
 5MB fails the run; the same list row (`cltrMngNo`, `pbctCdtnNo`) on two
 pages fails the run; a failed page is retried once after 3 seconds;
-more than 20% or 500 dropped records fails the run; the daily cap
+more than 20% or 500 dropped records fails the run (an item whose name
+carries a phone number or a link is dropped as `contact in name` — the app
+has the same rule; 0 of 8,763 names in the Phase 1 dump match); the daily cap
 (900 calls per API, KST day) is checked before calling.
 
 Real-transaction rules (plan D17, D29 ②, Phase 3 + review): MOLIT is
@@ -138,6 +140,13 @@ list, rerun **once** at most the same day. If the provider's limit is hit
 anyway (code 22 or HTTP 429), the collector stops that API for the day and continues
 tomorrow.
 
+**The `data` ruleset refuses this push.** Once the `data` branch has the
+"restrict updates" rule with GitHub Actions as the only bypass actor
+(step 4c), a manual `git push --force … data:data` is rejected. Before
+pushing by hand, either add yourself (repository admin) to that rule's
+bypass list or set the ruleset to *Disabled*; push; then remove yourself
+from the bypass list / set it back to *Active* right away.
+
 ```sh
 cd ~/Documents/public-auction-data
 read -rs DATA_GO_KR_SERVICE_KEY && export DATA_GO_KR_SERVICE_KEY   # never paste it into chat or files
@@ -152,6 +161,13 @@ git worktree remove prev && rm -rf out
 unset DATA_GO_KR_SERVICE_KEY
 ```
 
+`git worktree remove prev` needs no `--force`: the collector only reads
+`prev/`, so the worktree stays clean (checked: git refuses only when
+`prev/` holds modified or untracked files — then something wrote into it;
+look before using `--force`). If a run stopped half-way and `prev/` is
+still there, remove it the same way before the next `git worktree add`;
+if the folder was deleted by hand, run `git worktree prune`.
+
 ## Step 4c (진호님): repository settings
 
 After creating the public repository `jinhom6225/public-auction-data` and
@@ -163,7 +179,9 @@ Rulesets):
 - `data`: block deletion, and restrict pushes to GitHub Actions (add the
   GitHub Actions app as the only bypass actor of a "restrict updates"
   rule) so nobody else can plant a crafted cache; the workflow
-  force-pushes it daily.
+  force-pushes it daily. This also refuses your own manual push (Manual
+  fallback): add yourself to the bypass list or disable the ruleset only
+  for that push, then restore it.
 
 The workflow job runs only on `refs/heads/main` and pins its actions by
 commit SHA (`actions/checkout` v4.4.0, `actions/setup-python` v5.6.0,
