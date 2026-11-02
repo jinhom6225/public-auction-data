@@ -7,7 +7,10 @@ by or acting for 한국자산관리공사(캠코), 온비드 or 국토교통부.
 
 - `main`: the collector (`collector/`, Python 3.11 standard library only,
   no `pip install`) and the workflow `.github/workflows/collect.yml`.
-- `data` (force-pushed once a day, one commit): what the app reads —
+- `data` (force-pushed once a day, one commit; 05:00 KST, with a 17:00 KST
+  retry slot that runs only when today's KST copy is missing — plan A12; a
+  manual run always collects, so it adds a second copy that day): what the
+  app reads —
   `v1/index.json`, `v1/items/<sido>.json` — plus the collector's own state
   `cache/seen.json` (day-to-day history) and `cache/budget.json` (daily
   call counts), the real-transaction cache `cache/rtms/<api>/<lawd>/<yyyymm>.json`
@@ -136,7 +139,9 @@ hand (진호님). Keep same-day manual reruns to **10 or fewer** for Onbid: a
 failed run does not record its calls, so the daily cap cannot see them.
 MOLIT is tighter: one failed run can already have spent most of the land
 API's real 1,000-call day, so after a failed run that got past the Onbid
-list, rerun **once** at most the same day. If the provider's limit is hit
+list, rerun **once** at most the same day. On a day the morning run failed, the
+17:00 KST retry slot (plan A12) is that one rerun — do not rerun by hand after
+it has run. If the provider's limit is hit
 anyway (code 22 or HTTP 429), the collector stops that API for the day and continues
 tomorrow.
 

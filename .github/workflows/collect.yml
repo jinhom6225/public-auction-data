@@ -1,6 +1,8 @@
 # Daily public-auction collector (public_auction_alert plan D30, D28, D29).
-# 05:00 KST = 20:00 UTC. Order: unit tests -> yesterday's `data` branch into
-# prev/ -> collect -> validate -> new orphan commit -> force-push `data`.
+# 05:00 KST = 20:00 UTC, plus a 17:00 KST retry slot (plan A12). Order: unit
+# tests -> yesterday's `data` branch into prev/ -> same-day check (scheduled
+# runs stop if today's KST copy exists) -> collect -> validate -> new orphan
+# commit -> force-push `data`.
 # A failed step stops the job before the push, so the app keeps yesterday's
 # copy (D29 5). The service key lives only in the Collect step's env.
 # Never add `set -x` here (D28). Actions are pinned by commit SHA (verified
@@ -13,7 +15,11 @@ name: collect
 
 on:
   schedule:
-    - cron: "0 20 * * *"
+    - cron: "0 20 * * *"  # 05:00 KST
+    # 17:00 KST retry slot (plan A12): collects only when today's KST copy
+    # is missing, so a failed or dropped morning run is made up the same day
+    # and the app still sees at most one copy per Seoul day.
+    - cron: "0 8 * * *"   # 17:00 KST
   workflow_dispatch:
     inputs:
       force_fail:
@@ -70,10 +76,37 @@ jobs:
             exit 1
           fi
 
+      # Plan A12: a second copy on the same Seoul day can make the app drop a
+      # held 09:00 alert bundle (plan A10), so a scheduled run stops here when
+      # today's copy is already published (the retry slot normally; also a
+      # morning run delayed past the retry). Manual runs always collect.
+      - name: Retry slot check
+        id: retry
+        if: github.event_name == 'schedule'
+        env:
+          PREV_MODE: ${{ steps.prev.outputs.mode }}
+        run: |
+          today=$(TZ=Asia/Seoul date +%Y-%m-%d)
+          if [ "$PREV_MODE" != "prev" ] || [ ! -f prev/v1/index.json ]; then
+            echo "Same-day check: no published copy yet, collecting."
+            exit 0
+          fi
+          published=$(python3 -I -c 'import json, sys, datetime as d
+          g = json.load(open(sys.argv[1], encoding="utf-8"))["generatedAt"]
+          t = d.datetime.fromisoformat(g.replace("Z", "+00:00"))
+          print(t.astimezone(d.timezone(d.timedelta(hours=9))).date())' prev/v1/index.json) || published=""
+          if [ "$published" = "$today" ]; then
+            echo "Same-day check: today's copy ($today KST) is already published; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Same-day check: last copy is from ${published:-unknown}, collecting."
+          fi
+
       # The collector redacts the key from everything it prints; only the
       # "done:" line and the per-API rtms failure counts reach Telegram.
       - name: Collect
         id: collect
+        if: steps.retry.outputs.skip != 'true'
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           PREV_MODE: ${{ steps.prev.outputs.mode }}
@@ -96,9 +129,11 @@ jobs:
           rm -f "$log"
 
       - name: Validate output
+        if: steps.retry.outputs.skip != 'true'
         run: python3 -m collector.validate_output out
 
       - name: Publish the data branch (one orphan commit, force push)
+        if: steps.retry.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -118,6 +153,7 @@ jobs:
       # if main has no commit yet this month, record the last success. The
       # data branch is already published, so a rejected push only warns.
       - name: Monthly activity commit on main
+        if: steps.retry.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -141,8 +177,9 @@ jobs:
             echo "::warning::Keepalive push to main was rejected; the data branch is published. Retried on the next run (KST day 1-3)."
           fi
 
+      # A skipped retry slot stays quiet; failures and real runs notify.
       - name: Telegram notice
-        if: always()
+        if: always() && steps.retry.outputs.skip != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
